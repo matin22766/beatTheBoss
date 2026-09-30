@@ -17,13 +17,19 @@ Everything runs locally in the browser. Uploaded photos never leave your device.
   and morphs it onto the boss. You can also snap a photo with your webcam.
 - **Expressive faces**: the photo face itself squints, screams, frowns and smirks. It gets spiral
   eyes when dazed and X-eyes on a knockout.
-- **24 weapons** in 6 categories:
-  - **Blunt:** fists, bat, frying pan, sledgehammer, brick, keyboard, rubber chicken.
-  - **Sharp:** katana, fire axe, thrown cleaver, chainsaw, throwing knives.
-  - **Guns:** pistol, shotgun, nail gun, crossbow.
+- **46 weapons** in 8 categories:
+  - **Blunt:** fists, bat, frying pan, sledgehammer, brick, keyboard, rubber chicken, Ban Hammer
+    (floor shockwave), boomerang (comes back to your hand).
+  - **Sharp:** katana, fire axe, thrown cleaver, chainsaw, throwing knives, laser cutter,
+    ricocheting buzzsaw launcher, guillotine, shuriken.
+  - **Guns:** pistol, shotgun, nail gun, crossbow, minigun (spins up), plasma rifle.
   - **Explosives:** grenade, sticky dynamite, rocket launcher.
   - **Elemental:** flamethrower, taser, freeze ray.
-  - **Drops:** anvil, bowling ball.
+  - **Magic:** black hole (pulls everything in and tears limbs off), tornado, flying swords, bee
+    swarm, lightning strike (chains into furniture), ice spikes, meteor shower, Tesla coil turret.
+  - **Drops:** anvil, bowling ball, wrecking ball (swings from the ceiling), piano.
+  - **Gadgets:** web shooter (hold to hoist him up), harpoon gun (pins him to the wall), gravity
+    gun (hold to lift, release to launch), magnet (hurls scrap metal at him).
 - **Damage and gore**:
   - Limbs sever from cutting and explosive damage. Stumps get meat-and-bone caps and blood fountains.
   - Bones snap from hard blunt hits, so limbs flop and bend the wrong way.
@@ -83,7 +89,7 @@ npm run preview
 The headless browser smoke test drives the real game in Chromium. Sections:
 
 - `basic`: punches, grabbing and throwing.
-- `weapons`: all 24 weapons.
+- `weapons`: all 46 weapons (`WEAPONS=id,id` to pick some).
 - `deaths`: all 8 death styles.
 - `shop`: a purchase.
 - `themes`: all arenas.

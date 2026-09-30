@@ -10,8 +10,8 @@ import type { CameraRig } from '../../core/CameraRig';
 import type { ViewModel } from './ViewModel';
 import type { PropHit, PropSystem } from '../../props/PropSystem';
 
-export type WeaponCategory = 'blunt' | 'sharp' | 'gun' | 'explosive' | 'elemental' | 'drop';
-export type Archetype = 'melee' | 'thrown' | 'hitscan' | 'projectile' | 'spray' | 'saw';
+export type WeaponCategory = 'blunt' | 'sharp' | 'gun' | 'explosive' | 'elemental' | 'magic' | 'drop' | 'special';
+export type Archetype = 'melee' | 'thrown' | 'hitscan' | 'projectile' | 'spray' | 'saw' | 'field' | 'summon' | 'strike' | 'turret' | 'tether' | 'gravity';
 
 export interface WeaponDef {
   id: string;
@@ -63,6 +63,28 @@ export interface WeaponDef {
     /** Collider shape for physical throwables. */
     shape?: 'box' | 'ball';
     half?: [number, number, number];
+    /** Projectile spin axis (default x). */
+    spinAxis?: 'x' | 'y';
+    /** Projectile: bounce off walls this many times (and fly on through the boss). */
+    ricochet?: number;
+    /** Projectile: curve back to the hand like a boomerang. */
+    returns?: boolean;
+    /** Projectile: particle trail colour instead of the rocket flame. */
+    trail?: number;
+    /** Thrown: hang from the ceiling on a chain and swing through the target. */
+    pendulum?: boolean;
+    /** Thrown: sound on the first hard landing. */
+    landSound?: SoundName;
+    /** Spray: draw a solid beam of this colour. */
+    beam?: number;
+    /** Hitscan: seconds of barrel spin before the first shot. */
+    spinUp?: number;
+    /** Melee: slam the floor with a knock-up shockwave of this radius. */
+    shockwave?: number;
+    /** Field / summon / turret lifetime (seconds). */
+    duration?: number;
+    /** Which variant of a multi-weapon archetype this is. */
+    kind?: string;
   };
 }
 

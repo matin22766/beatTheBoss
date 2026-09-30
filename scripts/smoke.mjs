@@ -230,8 +230,17 @@ await page.evaluate(() => {
 const only = process.env.WEAPONS ? process.env.WEAPONS.split(',') : null;
 const weaponIds = (await page.evaluate(() => window.__game.weaponBar.visible().map((w) => w.id))).filter((id) => !only || only.includes(id));
 const results = {};
+// Seconds to hold the button, and to wait afterwards (fuses, drops, summons and fields take time).
+const HOLD = { grenade: 0.1, dynamite: 0.1, anvil: 0.1, bowling: 0.1, rocket: 0.1, piano: 0.1, wreckingball: 0.1, meteor: 0.1, guillotine: 0.1, minigun: 1.6, laser: 1.4, gravitygun: 1 };
+const SLOW = ['grenade', 'dynamite', 'anvil', 'bowling', 'rocket', 'cleaver', 'knives', 'crossbow', 'brick', 'piano', 'wreckingball', 'meteor', 'swords', 'bees', 'blackhole', 'tornado', 'magnet', 'tesla', 'buzzsaw', 'boomerang', 'shuriken', 'plasma', 'harpoon', 'icespikes', 'lightning'];
+const AFTER = { guillotine: 1.2, web: 0.8 };
+const SHOTS = ['katana', 'shotgun', 'rocket', 'flamethrower', 'taser', 'freezeray', 'chainsaw', 'dynamite', 'anvil', 'blackhole', 'tornado', 'swords', 'bees', 'lightning', 'icespikes', 'meteor', 'tesla', 'laser', 'minigun', 'buzzsaw', 'guillotine', 'banhammer', 'wreckingball', 'piano', 'web', 'harpoon', 'gravitygun', 'magnet', 'plasma'];
 for (const id of weaponIds) {
-  await page.evaluate(() => window.__game.spawnBoss());
+  // Lingering effects (fields, turrets, summons) from the previous weapon must not count.
+  await page.evaluate(() => {
+    window.__game.weapons.dispose();
+    window.__game.spawnBoss();
+  });
   await waitGame(1);
   await page.evaluate((wid) => {
     const g = window.__game;
@@ -241,14 +250,14 @@ for (const id of weaponIds) {
   const p = await partXY('chest');
   await page.mouse.move(p.x, p.y);
   await page.mouse.down();
-  await waitGame(['grenade', 'dynamite', 'anvil', 'bowling', 'rocket'].includes(id) ? 0.1 : 0.9);
+  await waitGame(HOLD[id] ?? 0.9);
   await page.mouse.up();
-  // Fuses, falling anvils and slow projectiles need time to land.
-  await waitGame(['grenade', 'dynamite', 'anvil', 'bowling', 'rocket', 'cleaver', 'knives', 'crossbow', 'brick'].includes(id) ? 3.2 : 0.5);
+  await waitGame(AFTER[id] ?? (SLOW.includes(id) ? 3.2 : 0.5));
   const after = await page.evaluate(() => (window.__game.boss ? window.__game.boss.damage.hp : 0));
   results[id] = Math.round(before - after);
-  if (['katana', 'shotgun', 'rocket', 'flamethrower', 'taser', 'freezeray', 'chainsaw', 'dynamite', 'anvil'].includes(id)) await shot(`w-${id}`);
+  if (SHOTS.includes(id)) await shot(`w-${id}`);
 }
+await page.evaluate(() => window.__game.weapons.dispose());
 console.log('weapon damage', JSON.stringify(results));
 const dud = Object.entries(results).filter(([, d]) => d <= 0).map(([k]) => k);
 if (dud.length) errors.push('weapons dealt no damage: ' + dud.join(', '));
@@ -266,8 +275,12 @@ if (sections.has('shop')) {
   await page.click('[data-item="katana"] .buy');
   await wait(500);
   await shot('s-shop');
-  const r = await page.evaluate(() => ({ owned: window.__game.isOwned({ id: 'katana' }), coins: window.__game.economy.coins, weapon: window.__game.weapons.current.id }));
-  if (!r.owned || r.coins !== 4500 || r.weapon !== 'katana') errors.push('shop purchase failed: ' + JSON.stringify(r));
+  const r = await page.evaluate(() => {
+    const g = window.__game;
+    const price = g.weaponBar.visible().find((w) => w.id === 'katana')?.price ?? -1;
+    return { owned: g.isOwned({ id: 'katana' }), coins: g.economy.coins, price, weapon: g.weapons.current.id };
+  });
+  if (!r.owned || r.coins !== 5000 - r.price || r.weapon !== 'katana') errors.push('shop purchase failed: ' + JSON.stringify(r));
   await page.keyboard.press('Escape');
   await page.evaluate(() => window.__shop.open('arenas'));
   await wait(400);

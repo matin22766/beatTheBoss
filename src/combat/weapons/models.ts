@@ -301,6 +301,270 @@ export const models = {
       g.add(mesh(new THREE.CircleGeometry(0.012, 10), hole, x, y, 0.109));
     return g;
   },
+
+  // ------------------------------------------------------------------ v2 weapons
+  blackHoleOrb(): THREE.Object3D {
+    const g = new THREE.Group();
+    g.add(mesh(new THREE.SphereGeometry(0.09, 20, 14), new THREE.MeshBasicMaterial({ color: 0x050008 })));
+    const ring = mesh(new THREE.TorusGeometry(0.13, 0.015, 8, 32), glowMat(0xb14cff));
+    ring.rotation.x = Math.PI / 2.4;
+    g.add(ring);
+    return shrink(g, 0.6);
+  },
+  tornadoJar(): THREE.Object3D {
+    const g = new THREE.Group();
+    g.add(mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.18, 16), mat(0xcfe8ff, 0.003, { transparent: true, opacity: 0.5 })));
+    const swirl = mesh(new THREE.ConeGeometry(0.05, 0.14, 10, 1, true), glowMat(0x9fb7c9));
+    swirl.rotation.x = Math.PI;
+    g.add(swirl, boxm(0.15, 0.03, 0.15, mat(0x6b4a33), 0, 0.1, 0));
+    return shrink(g, 0.8);
+  },
+  spectralSword(): THREE.Object3D {
+    const g = new THREE.Group();
+    g.add(rod(0.015, 0.14, glowMat(0x7ff6ff), -0.08), blade(0.7, 0.05, 0.008, glowMat(0xbff9ff), 0.06));
+    const guard = boxm(0.14, 0.02, 0.02, glowMat(0x7ff6ff), 0, 0, 0.06);
+    g.add(guard);
+    return g;
+  },
+  swordHilt(): THREE.Object3D {
+    const g = new THREE.Group();
+    g.add(rod(0.02, 0.18, mat(0x3a2a5a), -0.08), boxm(0.16, 0.025, 0.03, mat(0xc9a227), 0, 0, 0.1));
+    g.add(mesh(new THREE.SphereGeometry(0.03, 10, 8), glowMat(0x7ff6ff), 0, 0, 0.14));
+    return g;
+  },
+  beeHive(): THREE.Object3D {
+    const g = new THREE.Group();
+    for (let i = 0; i < 4; i++) {
+      const t = new THREE.Mesh(new THREE.TorusGeometry(0.08 - i * 0.012, 0.03, 8, 16), mat(0xe9b949));
+      t.rotation.x = Math.PI / 2;
+      t.position.y = -0.06 + i * 0.045;
+      g.add(t);
+    }
+    g.add(mesh(new THREE.CircleGeometry(0.02, 10), new THREE.MeshBasicMaterial({ color: 0x111111 }), 0, -0.02, 0.1));
+    return shrink(g, 0.6);
+  },
+  bee(): THREE.Object3D {
+    const g = new THREE.Group();
+    const body = mesh(new THREE.SphereGeometry(0.025, 8, 6), mat(0xffc300, 0));
+    body.scale.set(1, 0.8, 1.4);
+    const stripe = mesh(new THREE.TorusGeometry(0.022, 0.006, 4, 10), new THREE.MeshBasicMaterial({ color: 0x111111 }));
+    const wing = mesh(new THREE.CircleGeometry(0.02, 8), glowMat(0xffffff, 0.6), 0.015, 0.02, 0);
+    wing.rotation.x = -Math.PI / 2;
+    const wing2 = wing.clone();
+    wing2.position.x = -0.015;
+    g.add(body, stripe, wing, wing2);
+    return shrink(g, 2.2);
+  },
+  staff(color = 0x7fd3ff): THREE.Object3D {
+    const g = new THREE.Group();
+    g.add(rod(0.015, 0.55, wood(), -0.2));
+    g.add(mesh(new THREE.OctahedronGeometry(0.05, 0), glowMat(color), 0, 0, 0.38));
+    return shrink(g, 0.7);
+  },
+  remote(color = 0xc1121f): THREE.Object3D {
+    const g = new THREE.Group();
+    g.add(boxm(0.06, 0.03, 0.16, black(), 0, 0, 0.04), mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.01, 12), mat(color), 0, 0.02, 0.07));
+    g.add(rod(0.004, 0.12, steel(), 0.1));
+    return g;
+  },
+  meteor(): THREE.Object3D {
+    const g = new THREE.Group();
+    const rock = mesh(new THREE.DodecahedronGeometry(0.22, 0), mat(0x4a2f1f));
+    g.add(rock, mesh(new THREE.SphereGeometry(0.26, 12, 10), glowMat(0xff6b35, 0.45)));
+    return g;
+  },
+  teslaDevice(): THREE.Object3D {
+    const g = new THREE.Group();
+    g.add(boxm(0.08, 0.08, 0.12, mat(0x2d3a45)), rod(0.02, 0.12, steel(), 0.06));
+    g.add(mesh(new THREE.TorusGeometry(0.04, 0.012, 6, 14), steel(), 0, 0, 0.2));
+    return g;
+  },
+  teslaCoil(): THREE.Object3D {
+    const g = new THREE.Group();
+    g.add(mesh(new THREE.CylinderGeometry(0.25, 0.3, 0.2, 16), mat(0x2d3a45), 0, 0.1, 0));
+    const coil = mesh(new THREE.CylinderGeometry(0.1, 0.12, 1.1, 16), mat(0xb87333, 0.003), 0, 0.75, 0);
+    const top = mesh(new THREE.TorusGeometry(0.22, 0.07, 10, 24), steel(), 0, 1.35, 0);
+    top.rotation.x = Math.PI / 2;
+    g.add(coil, top);
+    return g;
+  },
+  laserCutter(): THREE.Object3D {
+    const g = new THREE.Group();
+    g.add(boxm(0.06, 0.08, 0.3, mat(0xe0e0e0)), rod(0.02, 0.1, black(), 0.15), boxm(0.04, 0.1, 0.05, black(), 0, -0.08, -0.06));
+    g.add(mesh(new THREE.SphereGeometry(0.018, 8, 6), glowMat(0xff1744), 0, 0, 0.26));
+    return g;
+  },
+  minigun(): THREE.Object3D {
+    const g = new THREE.Group();
+    const barrels = new THREE.Group();
+    barrels.name = 'barrels';
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const b = rod(0.012, 0.55, darkSteel(), 0.05);
+      b.position.x = Math.cos(a) * 0.035;
+      b.position.y = Math.sin(a) * 0.035;
+      barrels.add(b);
+    }
+    g.add(barrels, boxm(0.12, 0.12, 0.2, black(), 0, 0, -0.05), boxm(0.04, 0.12, 0.05, black(), 0, -0.1, -0.1));
+    return g;
+  },
+  buzzsawLauncher(): THREE.Object3D {
+    const g = new THREE.Group();
+    g.add(boxm(0.1, 0.06, 0.34, mat(0xf29e1f)), boxm(0.04, 0.1, 0.05, black(), 0, -0.07, -0.05));
+    const disc = mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.01, 20), steel(), 0, 0.04, 0.12);
+    g.add(disc);
+    return g;
+  },
+  sawDisc(): THREE.Object3D {
+    // Lies flat in the XZ plane so it can spin in its own plane while flying along +Z.
+    const g = new THREE.Group();
+    g.add(mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.012, 24), steel()));
+    g.add(mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.02, 10), darkSteel()));
+    for (let i = 0; i < 12; i++) {
+      const pivot = new THREE.Group();
+      pivot.rotation.y = (i / 12) * Math.PI * 2;
+      const tooth = mesh(new THREE.ConeGeometry(0.02, 0.05, 4), steel(), 0.15, 0, 0);
+      tooth.rotation.z = -Math.PI / 2;
+      pivot.add(tooth);
+      g.add(pivot);
+    }
+    return g;
+  },
+  guillotine(): THREE.Object3D {
+    const g = new THREE.Group();
+    const w = wood();
+    g.add(boxm(0.12, 2.6, 0.12, w, -0.45, 1.3, 0), boxm(0.12, 2.6, 0.12, w, 0.45, 1.3, 0), boxm(1.1, 0.14, 0.16, w, 0, 2.6, 0));
+    const bladeG = new THREE.Group();
+    bladeG.name = 'blade';
+    const s = new THREE.Shape([new THREE.Vector2(-0.4, 0.25), new THREE.Vector2(0.4, 0.25), new THREE.Vector2(0.4, 0.05), new THREE.Vector2(-0.4, -0.1)]);
+    const blade = new THREE.Mesh(new THREE.ExtrudeGeometry(s, { depth: 0.02, bevelEnabled: false }), steel());
+    blade.position.z = -0.01;
+    bladeG.add(blade, boxm(0.8, 0.12, 0.08, mat(0x333333), 0, 0.3, 0));
+    bladeG.position.y = 2.2;
+    g.add(bladeG);
+    return g;
+  },
+  banHammer(): THREE.Object3D {
+    const g = new THREE.Group();
+    g.add(rod(0.035, 1.1, mat(0x2a2a2a), -0.1));
+    const head = boxm(0.34, 0.34, 0.6, mat(0x3a86ff), 0, 0, 1.05);
+    head.rotation.y = Math.PI / 2;
+    g.add(head);
+    const label = mesh(new THREE.PlaneGeometry(0.5, 0.2), new THREE.MeshBasicMaterial({ color: 0xffffff }), 0, 0.171, 1.05);
+    label.rotation.x = -Math.PI / 2;
+    g.add(label);
+    return g;
+  },
+  wreckingBall(): THREE.Object3D {
+    const g = new THREE.Group();
+    g.add(mesh(new THREE.SphereGeometry(0.45, 24, 18), mat(0x2d2f36, 0.004)));
+    g.add(mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.12, 12), steel(), 0, 0.48, 0));
+    return g;
+  },
+  webShooter(): THREE.Object3D {
+    const g = new THREE.Group();
+    g.add(mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.12, 16), mat(0xd62828)), rod(0.01, 0.06, steel(), 0.05));
+    g.children[0].rotation.x = Math.PI / 2;
+    g.add(mesh(new THREE.SphereGeometry(0.03, 10, 8), mat(0x1d4ed8), 0, 0.05, 0));
+    return shrink(g, 0.6);
+  },
+  harpoonGun(): THREE.Object3D {
+    const g = new THREE.Group();
+    g.add(rod(0.03, 0.5, darkSteel(), -0.05), boxm(0.05, 0.12, 0.06, wood(), 0, -0.08, -0.05), rod(0.008, 0.25, steel(), 0.4));
+    return g;
+  },
+  harpoon(): THREE.Object3D {
+    const g = new THREE.Group();
+    g.add(rod(0.01, 0.5, steel(), -0.45));
+    const tip = mesh(new THREE.ConeGeometry(0.03, 0.1, 4), steel(), 0, 0, 0.1);
+    tip.rotation.x = Math.PI / 2;
+    const barb = boxm(0.08, 0.005, 0.03, steel(), 0, 0, 0.02);
+    g.add(tip, barb);
+    return g;
+  },
+  gravityGun(): THREE.Object3D {
+    const g = new THREE.Group();
+    g.add(boxm(0.1, 0.1, 0.3, mat(0xf29e1f)), boxm(0.04, 0.1, 0.05, black(), 0, -0.09, -0.05));
+    for (const a of [0.4, -0.4, Math.PI]) {
+      const claw = boxm(0.015, 0.015, 0.14, darkSteel(), Math.sin(a) * 0.05, Math.cos(a) * 0.05, 0.2);
+      claw.rotation.set(Math.cos(a) * 0.4, -Math.sin(a) * 0.4, 0);
+      g.add(claw);
+    }
+    g.add(mesh(new THREE.SphereGeometry(0.02, 8, 6), glowMat(0x7ff6ff), 0, 0, 0.18));
+    return g;
+  },
+  plasmaRifle(): THREE.Object3D {
+    const g = new THREE.Group();
+    g.add(boxm(0.07, 0.09, 0.45, mat(0x3a3f4a), 0, 0, 0.05), boxm(0.04, 0.11, 0.05, black(), 0, -0.09, -0.08));
+    for (let i = 0; i < 3; i++) g.add(mesh(new THREE.TorusGeometry(0.045, 0.008, 6, 14), glowMat(0x39ff88), 0, 0, 0.1 + i * 0.08));
+    return g;
+  },
+  plasmaBolt(): THREE.Object3D {
+    const g = new THREE.Group();
+    const core = mesh(new THREE.SphereGeometry(0.05, 10, 8), glowMat(0xd8ffe8, 1));
+    const glow = mesh(new THREE.SphereGeometry(0.1, 10, 8), glowMat(0x39ff88, 0.5));
+    glow.scale.set(1, 1, 1.8);
+    g.add(core, glow);
+    return g;
+  },
+  shuriken(): THREE.Object3D {
+    const g = new THREE.Group();
+    const s = new THREE.Shape();
+    for (let i = 0; i < 8; i++) {
+      const r = i % 2 ? 0.02 : 0.08;
+      const a = (i / 8) * Math.PI * 2;
+      if (i === 0) s.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      else s.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    s.closePath();
+    const m = new THREE.Mesh(new THREE.ExtrudeGeometry(s, { depth: 0.006, bevelEnabled: false }), steel());
+    m.rotation.x = Math.PI / 2;
+    g.add(m);
+    return g;
+  },
+  boomerang(): THREE.Object3D {
+    const g = new THREE.Group();
+    const m = mat(0xc67c3b);
+    const a = boxm(0.05, 0.015, 0.3, m, 0, 0, 0.1);
+    a.rotation.y = 0.5;
+    const b = boxm(0.05, 0.015, 0.3, m, 0, 0, 0.1);
+    b.rotation.y = -0.5;
+    b.position.x = 0.07;
+    g.add(a, b);
+    return g;
+  },
+  piano(): THREE.Object3D {
+    const g = new THREE.Group();
+    const body = mat(0x111111);
+    // Upright piano centred on its collider (1.4 × 1.3 × 0.8).
+    g.add(boxm(1.4, 0.95, 0.6, body, 0, 0.18, -0.1), boxm(1.3, 0.05, 0.25, mat(0xf5f5f5), 0, -0.05, 0.28));
+    for (let i = 0; i < 12; i++) g.add(boxm(0.05, 0.03, 0.14, black(), -0.55 + i * 0.1, -0.02, 0.26));
+    g.add(boxm(1.4, 0.06, 0.3, body, 0, -0.1, 0.25));
+    g.add(boxm(0.08, 0.5, 0.08, body, -0.6, -0.4, 0.3), boxm(0.08, 0.5, 0.08, body, 0.6, -0.4, 0.3));
+    return g;
+  },
+  magnet(): THREE.Object3D {
+    const g = new THREE.Group();
+    const arc = mesh(new THREE.TorusGeometry(0.1, 0.035, 10, 20, Math.PI), mat(0xd62828));
+    arc.rotation.set(Math.PI / 2, 0, Math.PI / 2);
+    arc.position.z = 0.05;
+    g.add(arc, boxm(0.07, 0.07, 0.06, mat(0xdddddd), 0.1, 0, 0.18), boxm(0.07, 0.07, 0.06, mat(0xdddddd), -0.1, 0, 0.18));
+    return g;
+  },
 };
+
+/** Scale a model without touching its root transform (the view model sets the root scale). */
+function shrink(g: THREE.Object3D, k: number): THREE.Group {
+  const outer = new THREE.Group();
+  g.scale.setScalar(k);
+  outer.add(g);
+  return outer;
+}
+
+function glowMat(color: number, opacity = 0.9): THREE.MeshBasicMaterial {
+  const m = new THREE.MeshBasicMaterial({ color, transparent: opacity < 1, opacity, depthWrite: opacity >= 1 });
+  m.userData.outlineParameters = { visible: false };
+  return m;
+}
 
 export type ModelName = keyof typeof models;

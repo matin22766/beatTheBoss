@@ -7,6 +7,7 @@ import { hitFeedback } from '../hitFeedback';
 import { explode } from '../../explosion';
 import { disposeObject } from './Melee';
 import type { PartName } from '../../../character/RagdollDef';
+import { orientBetween, strand } from './common';
 
 interface Item {
   body: RAPIER.RigidBody;
@@ -19,6 +20,10 @@ interface Item {
   lastBounce: number;
   joint: RAPIER.ImpulseJoint | null;
   preVel: THREE.Vector3;
+  /** Pendulum: fixed ceiling anchor, its rope joint and the chain mesh. */
+  anchor: RAPIER.RigidBody | null;
+  anchorPos: THREE.Vector3 | null;
+  chain: THREE.Mesh | null;
 }
 
 const MAX_ITEMS = 10;
@@ -60,7 +65,25 @@ export class Thrown implements WeaponBehavior {
     const target = (aim.hit?.point ?? aim.point).clone();
     let pos: THREE.Vector3;
     let vel: THREE.Vector3;
-    if (o.drop) {
+    let anchorPos: THREE.Vector3 | null = null;
+    if (o.pendulum) {
+      // Hang from the ceiling above the target and let go from high up to one side.
+      anchorPos = new THREE.Vector3(
+        THREE.MathUtils.clamp(target.x, -ROOM.halfWidth + 0.6, ROOM.halfWidth - 0.6),
+        ROOM.height - 0.05,
+        THREE.MathUtils.clamp(target.z, ROOM.back + 0.6, ROOM.front - 0.6),
+      );
+      const len = anchorPos.y - THREE.MathUtils.clamp(target.y, 0.8, 2.5);
+      const side = target.x > 0 ? -1 : 1;
+      const limit = ROOM.halfWidth - 0.6;
+      const sx = THREE.MathUtils.clamp(anchorPos.x + side * len * Math.sin(1.2), -limit, limit);
+      const h = Math.min(len * 0.98, Math.abs(sx - anchorPos.x));
+      pos = new THREE.Vector3(sx, anchorPos.y - Math.sqrt(len * len - h * h), anchorPos.z);
+      vel = new THREE.Vector3();
+      audio.play('clang', { intensity: 0.7, pitch: 0.5 });
+      audio.play('whoosh', { intensity: 1, pitch: 0.35 });
+      this.ctx.fx.word('WRECKING BALL!', anchorPos.clone().setY(3.5), '#ffcc33', 0.45);
+    } else if (o.drop) {
       pos = new THREE.Vector3(
         THREE.MathUtils.clamp(target.x, -ROOM.halfWidth + 0.5, ROOM.halfWidth - 0.5),
         ROOM.height - 0.4,
@@ -93,7 +116,7 @@ export class Thrown implements WeaponBehavior {
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(pos.x, pos.y, pos.z)
       .setLinvel(vel.x, vel.y, vel.z)
-      .setAngvel(o.drop ? { x: 0, y: 0, z: 0 } : { x: (Math.random() - 0.5) * 12, y: (Math.random() - 0.5) * 6, z: (Math.random() - 0.5) * 12 })
+      .setAngvel(o.drop || o.pendulum ? { x: 0, y: 0, z: 0 } : { x: (Math.random() - 0.5) * 12, y: (Math.random() - 0.5) * 6, z: (Math.random() - 0.5) * 12 })
       .setCcdEnabled(true)
       .setAngularDamping(0.3);
     if (o.drop) bodyDesc.setRotation(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.random() * Math.PI));
@@ -108,6 +131,16 @@ export class Thrown implements WeaponBehavior {
       .setContactForceEventThreshold(0);
     const collider = this.ctx.physics.world.createCollider(cd, body);
     this.ctx.sync.add(body, obj);
+    let anchor: RAPIER.RigidBody | null = null;
+    let joint: RAPIER.ImpulseJoint | null = null;
+    let chain: THREE.Mesh | null = null;
+    if (anchorPos) {
+      const world = this.ctx.physics.world;
+      anchor = world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(anchorPos.x, anchorPos.y, anchorPos.z));
+      joint = world.createImpulseJoint(RAPIER.JointData.rope(anchorPos.distanceTo(pos), { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }), anchor, body, true);
+      chain = strand(0x3a3d42, 0.025);
+      this.ctx.scene.add(chain);
+    }
     this.items.push({
       body,
       collider,
@@ -117,8 +150,11 @@ export class Thrown implements WeaponBehavior {
       life: o.fuse ? 30 : 12,
       lastHit: -1,
       lastBounce: -1,
-      joint: null,
+      joint,
       preVel: vel.clone(),
+      anchor,
+      anchorPos,
+      chain,
     });
     while (this.items.length > MAX_ITEMS) this.remove(this.items[0]);
   }
@@ -144,8 +180,11 @@ export class Thrown implements WeaponBehavior {
       }
       if (part) this.hitBoss(it, part, speed, other);
       else if (speed > 2 && this.time - it.lastBounce > 0.15) {
+        const first = it.lastBounce < 0;
         it.lastBounce = this.time;
-        audio.play(this.def.hitSound === 'clang' || (this.def.opts?.mass ?? 1) > 20 ? 'thud' : 'thunk', { intensity: Math.min(1, speed / 10) });
+        const land = this.def.opts?.landSound;
+        if (first && land) audio.play(land, { intensity: 1 });
+        else audio.play(this.def.hitSound === 'clang' || (this.def.opts?.mass ?? 1) > 20 ? 'thud' : 'thunk', { intensity: Math.min(1, speed / 10) });
         if (speed > 6) {
           const t = it.body.translation();
           this.ctx.fx.dustPuff(new THREE.Vector3(t.x, t.y, t.z), new THREE.Vector3(0, 1, 0), 0xcccccc, Math.min(1, speed / 12));
@@ -195,6 +234,10 @@ export class Thrown implements WeaponBehavior {
     this.cooldown -= dt;
     for (const it of [...this.items]) {
       it.age += dt;
+      if (it.chain && it.anchorPos && it.body.isValid()) {
+        const t = it.body.translation();
+        orientBetween(it.chain, it.anchorPos, new THREE.Vector3(t.x, t.y, t.z));
+      }
       if (it.fuse !== null) {
         it.fuse -= dt;
         const t = it.body.translation();
@@ -227,6 +270,11 @@ export class Thrown implements WeaponBehavior {
   private remove(it: Item): void {
     const world = this.ctx.physics.world;
     if (it.joint && it.joint.isValid()) world.removeImpulseJoint(it.joint, true);
+    if (it.anchor && it.anchor.isValid()) world.removeRigidBody(it.anchor);
+    if (it.chain) {
+      this.ctx.scene.remove(it.chain);
+      disposeObject(it.chain);
+    }
     this.ctx.sync.removeBody(it.body);
     if (it.body.isValid()) world.removeRigidBody(it.body);
     this.ctx.scene.remove(it.obj);

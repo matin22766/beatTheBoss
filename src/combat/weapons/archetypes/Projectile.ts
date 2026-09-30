@@ -6,6 +6,7 @@ import { explode } from '../../explosion';
 import { roomPoint } from '../../../core/roomPoint';
 import { disposeObject } from './Melee';
 import type { PartName } from '../../../character/RagdollDef';
+import { roomNormal } from './common';
 
 interface Shot {
   obj: THREE.Object3D;
@@ -17,6 +18,12 @@ interface Shot {
   fade: number;
   dodgeChecked: boolean;
   ignoreBoss: boolean;
+  age: number;
+  angle: number;
+  bounces: number;
+  /** Seconds before this shot can hurt the boss again (ricochets / boomerangs fly on through). */
+  hitCooldown: number;
+  returning: boolean;
 }
 
 const _up = new THREE.Vector3(0, 0, 1);
@@ -74,7 +81,22 @@ export class Projectile implements WeaponBehavior {
       const dist = target.distanceTo(muzzle);
       const vel = dir.clone().multiplyScalar(speed);
       vel.y += (g * dist) / speed / 2;
-      this.shots.push({ obj, pos: muzzle.clone(), vel, spin: o.spin ?? 0, life: 6, stuck: false, fade: 0, dodgeChecked: false, ignoreBoss: false });
+      this.shots.push({
+        obj,
+        pos: muzzle.clone(),
+        vel,
+        spin: o.spin ?? 0,
+        life: 6,
+        stuck: false,
+        fade: 0,
+        dodgeChecked: false,
+        ignoreBoss: false,
+        age: 0,
+        angle: 0,
+        bounces: o.ricochet ?? 0,
+        hitCooldown: 0,
+        returning: false,
+      });
     }
     if (this.shots.length > 40) this.remove(this.shots[0]);
   }
@@ -95,6 +117,27 @@ export class Projectile implements WeaponBehavior {
         if (s.life <= 0) this.remove(s);
         continue;
       }
+      s.age += dt;
+      s.hitCooldown -= dt;
+      if (o.returns) {
+        // Boomerang: arc out, then home back to the hand and get caught.
+        const hand = this.ctx.viewModel.muzzle();
+        if (s.age > 0.6) s.returning = true;
+        if (s.returning) {
+          const to = hand.clone().sub(s.pos);
+          if (to.length() < 0.6) {
+            audio.play('whoosh', { intensity: 0.5, pitch: 1.3 });
+            this.ctx.viewModel.recoil(0.5);
+            this.remove(s);
+            continue;
+          }
+          s.vel.lerp(to.normalize().multiplyScalar(o.speed ?? 14), Math.min(1, dt * 4));
+        } else if (s.age > 0.2) {
+          // A gentle hook on the way out.
+          s.vel.add(new THREE.Vector3().crossVectors(s.vel, new THREE.Vector3(0, 1, 0)).multiplyScalar(dt * 0.35));
+        }
+        if (Math.random() < 0.15) audio.play('whoosh', { intensity: 0.15, pitch: 1.6 });
+      }
       const prev = s.pos.clone();
       s.vel.y -= g * dt;
       s.pos.addScaledVector(s.vel, dt);
@@ -111,11 +154,12 @@ export class Projectile implements WeaponBehavior {
           s.ignoreBoss = this.ctx.tryDodge('projectile', s.vel.clone().normalize());
         }
       }
-      const hit = s.ignoreBoss ? null : this.ctx.raycastBoss(ray, len);
+      const hit = s.ignoreBoss || s.hitCooldown > 0 ? null : this.ctx.raycastBoss(ray, len);
       const dir = ray.direction.clone();
       const prop = this.ctx.raycastProp(ray, len);
       if (prop && (!hit || prop.distance < hit.point.distanceTo(ray.origin))) {
         this.ctx.props.hit(prop.prop, this.def.damage, prop.point, dir, this.def.impulse);
+        if (this.bounce(s, prop.point, prop.normal)) continue;
         this.onHitWall(s, prop.point, dir);
         continue;
       }
@@ -126,19 +170,51 @@ export class Projectile implements WeaponBehavior {
       // Room collision within this segment.
       const wall = roomPoint(ray);
       if (wall.distanceTo(prev) <= len) {
+        if (this.bounce(s, wall, roomNormal(wall))) continue;
         this.onHitWall(s, wall, dir);
         continue;
       }
       s.obj.position.copy(s.pos);
-      if (s.spin) s.obj.rotateX(s.spin * dt);
+      if (s.spin && o.spinAxis === 'y') {
+        // Flat discs (saw blades, shuriken, boomerangs) spin in their own plane.
+        s.angle += s.spin * dt;
+        s.obj.quaternion.setFromUnitVectors(_up, dir).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), s.angle));
+      } else if (s.spin) s.obj.rotateX(s.spin * dt);
       else s.obj.quaternion.setFromUnitVectors(_up, dir);
-      if (o.radius) this.ctx.fx.flame(s.pos.clone(), dir.clone().multiplyScalar(-2));
+      if (o.trail !== undefined) {
+        for (let i = 0; i < 2; i++) this.ctx.fx.sparks.spawn({ pos: s.pos.clone(), vel: dir.clone().multiplyScalar(-1.5).add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)), life: 0.25, size: 0.018, color: o.trail, gravity: 0 });
+      } else if (o.radius) this.ctx.fx.flame(s.pos.clone(), dir.clone().multiplyScalar(-2));
       if (s.life <= 0) this.remove(s);
     }
   }
 
+  /** Ricochet / boomerang: bounce off a surface instead of sticking. Returns true if it bounced. */
+  private bounce(s: Shot, point: THREE.Vector3, normal: THREE.Vector3): boolean {
+    const o = this.def.opts ?? {};
+    if (!o.returns && s.bounces <= 0) return false;
+    s.bounces--;
+    if (s.vel.dot(normal) > 0) normal = normal.clone().negate();
+    s.vel.reflect(normal).multiplyScalar(0.85);
+    s.pos.copy(point).addScaledVector(normal, 0.03);
+    s.returning = true;
+    audio.play(o.returns ? 'thunk' : 'clang', { intensity: 0.6, pitch: 1.2 + Math.random() * 0.3 });
+    this.ctx.fx.impactSparks(point, normal, 10);
+    return true;
+  }
+
   private onHitBoss(s: Shot, part: PartName, point: THREE.Vector3, dir: THREE.Vector3): void {
     const o = this.def.opts ?? {};
+    if (o.ricochet !== undefined || o.returns) {
+      // Flies on through (and back): cut, then keep going.
+      const amount = this.def.damage * (0.9 + Math.random() * 0.2);
+      const result = this.ctx.hitBoss({ part, amount, type: this.def.type, point: point.clone(), dir, impulse: this.def.impulse, source: this.def.id });
+      if (result) hitFeedback(this.ctx, this.def, point, dir, amount, result);
+      s.hitCooldown = 0.2;
+      s.returning = true;
+      s.pos.copy(point);
+      s.vel.multiplyScalar(0.85);
+      return;
+    }
     if (o.radius) {
       this.remove(s);
       explode(this.ctx, point, o.radius, this.def.damage, this.def.id);

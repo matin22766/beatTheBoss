@@ -8,6 +8,10 @@ import { roomPoint } from '../../../core/roomPoint';
 export class Hitscan implements WeaponBehavior {
   private cooldown = 0;
   private queued: Aim | null = null;
+  /** Minigun: barrel spin speed 0..1 and the motor loop. */
+  private spin = 0;
+  private spinning = false;
+  private stopLoop: (() => void) | null = null;
 
   constructor(
     private readonly def: WeaponDef,
@@ -15,12 +19,25 @@ export class Hitscan implements WeaponBehavior {
   ) {}
 
   down(aim: Aim): void {
+    if (this.def.opts?.spinUp) {
+      this.spinning = true;
+      if (this.def.loop && !this.stopLoop) this.stopLoop = audio.loop(this.def.loop, 0.8);
+      return;
+    }
     if (this.cooldown > 0) this.queued = this.cooldown < 0.15 ? aim : null;
     else this.fire(aim);
   }
 
   hold(aim: Aim): void {
+    const spinUp = this.def.opts?.spinUp;
+    if (spinUp && this.spin < 1) return;
     if (this.def.auto && this.cooldown <= 0) this.fire(aim);
+  }
+
+  up(): void {
+    this.spinning = false;
+    this.stopLoop?.();
+    this.stopLoop = null;
   }
 
   private fire(aim: Aim): void {
@@ -69,6 +86,12 @@ export class Hitscan implements WeaponBehavior {
 
   update(dt: number): void {
     this.cooldown -= dt;
+    const spinUp = this.def.opts?.spinUp;
+    if (spinUp) {
+      this.spin = this.spinning ? Math.min(1, this.spin + dt / spinUp) : Math.max(0, this.spin - dt / (spinUp * 2));
+      const barrels = this.ctx.viewModel.part('barrels');
+      if (barrels) barrels.rotation.z += dt * this.spin * 40;
+    }
     if (this.queued && this.cooldown <= 0) {
       const a = this.queued;
       this.queued = null;
@@ -76,5 +99,7 @@ export class Hitscan implements WeaponBehavior {
     }
   }
 
-  dispose(): void {}
+  dispose(): void {
+    this.up();
+  }
 }

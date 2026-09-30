@@ -114,12 +114,15 @@ export class Melee implements WeaponBehavior {
   }
 
   private impact(s: Swing): void {
+    if (this.def.opts?.shockwave) this.shockwave(s, this.def.opts.shockwave);
     // Re-check what's under the swing now: the boss may have moved since the click.
     const ray = new THREE.Ray(this.ctx.rig.camera.position.clone(), s.dir.clone());
     const hit = this.ctx.raycastBoss(ray) ?? s.aim.hit;
     const prop = this.ctx.raycastProp(ray);
     const bossDist = hit ? hit.point.distanceTo(ray.origin) : Infinity;
-    if (prop && prop.distance < bossDist && prop.point.distanceTo(s.end) < 0.9) {
+    // The hand stops `reach` short of the target: long weapons need a longer tolerance.
+    const tolerance = Math.max(0.9, (this.def.opts?.reach ?? 0.6) + 0.4);
+    if (prop && prop.distance < bossDist && prop.point.distanceTo(s.end) < tolerance) {
       // Smacking furniture.
       const amount = this.def.damage * (0.85 + Math.random() * 0.3);
       this.ctx.props.hit(prop.prop, amount, prop.point, s.dir, this.def.impulse);
@@ -127,7 +130,7 @@ export class Melee implements WeaponBehavior {
       this.ctx.rig.shake(0.1);
       return;
     }
-    if (!hit || s.dodged || hit.point.distanceTo(s.end) > 0.9) {
+    if (!hit || s.dodged || hit.point.distanceTo(s.end) > tolerance) {
       return;
     }
     const style = this.def.opts?.swing ?? 'overhead';
@@ -145,6 +148,42 @@ export class Melee implements WeaponBehavior {
       source: this.def.id,
     });
     if (result) hitFeedback(this.ctx, this.def, hit.point, hitDir, amount, result);
+  }
+
+  /** Slam the floor: a ring that knocks everything nearby into the air. */
+  private shockwave(s: Swing, radius: number): void {
+    const boss = this.ctx.boss();
+    const center = (s.aim.hit && boss ? boss.ragdoll.position('pelvis') : s.end.clone()).setY(0.03);
+    this.ctx.fx.shockRing(center, new THREE.Vector3(0, 1, 0), radius, 0x3a86ff);
+    this.ctx.fx.shockRing(center, new THREE.Vector3(0, 1, 0), radius * 0.6, 0xffffff);
+    this.ctx.fx.dustPuff(center, new THREE.Vector3(0, 1, 0), 0xcccccc, 1);
+    this.ctx.fx.debrisBurst(center, new THREE.Vector3(0, 1, 0), 0x888888, 14);
+    this.ctx.fx.word('BANNED!', center.clone().setY(2.4), '#3a86ff', 0.7);
+    audio.play('ban', { intensity: 1 });
+    this.ctx.rig.shake(0.7);
+    this.ctx.hitstop(0.05);
+    if (boss) {
+      let hurt = false;
+      for (const part of boss.ragdoll.parts.values()) {
+        const t = part.body.translation();
+        const d = Math.hypot(t.x - center.x, t.z - center.z);
+        if (d > radius || t.y > 2.5) continue;
+        const k = 1 - d / radius;
+        part.body.applyImpulse({ x: 0, y: part.def.mass * (2.5 + 4 * k), z: 0 }, true);
+        if (!hurt && part.attached) {
+          hurt = true;
+          boss.ragdoll.stagger(0.6);
+          const point = new THREE.Vector3(t.x, t.y, t.z);
+          this.ctx.hitBoss({ part: part.def.name, amount: 8 * k + 4, type: 'blunt', point, dir: new THREE.Vector3(0, 1, 0), impulse: 0, source: this.def.id });
+        }
+      }
+    }
+    for (const p of this.ctx.props.props) {
+      if (p.broken || !p.body.isDynamic()) continue;
+      const t = p.body.translation();
+      const d = Math.hypot(t.x - center.x, t.z - center.z);
+      if (d < radius) p.body.applyImpulse({ x: 0, y: p.body.mass() * (3 + 3 * (1 - d / radius)), z: 0 }, true);
+    }
   }
 
   dispose(): void {

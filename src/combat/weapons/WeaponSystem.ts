@@ -5,8 +5,14 @@ import { Projectile } from './archetypes/Projectile';
 import { Thrown } from './archetypes/Thrown';
 import { Spray } from './archetypes/Spray';
 import { Saw } from './archetypes/Saw';
+import { FieldWeapon } from './archetypes/Field';
+import { Summon } from './archetypes/Summon';
+import { Strike } from './archetypes/Strike';
+import { Turret } from './archetypes/Turret';
+import { Tether } from './archetypes/Tether';
+import { Gravity } from './archetypes/Gravity';
 
-function create(def: WeaponDef, ctx: WeaponCtx): WeaponBehavior {
+export function createBehavior(def: WeaponDef, ctx: WeaponCtx): WeaponBehavior {
   switch (def.archetype) {
     case 'melee':
       return new Melee(def, ctx);
@@ -20,12 +26,24 @@ function create(def: WeaponDef, ctx: WeaponCtx): WeaponBehavior {
       return new Spray(def, ctx);
     case 'saw':
       return new Saw(def, ctx);
+    case 'field':
+      return new FieldWeapon(def, ctx);
+    case 'summon':
+      return new Summon(def, ctx);
+    case 'strike':
+      return new Strike(def, ctx);
+    case 'turret':
+      return new Turret(def, ctx);
+    case 'tether':
+      return new Tether(def, ctx);
+    case 'gravity':
+      return new Gravity(def, ctx);
   }
 }
 
 /** Weapons that are held on screen (guns, sprays, throwables) rather than appearing in the world. */
 export function usesViewModel(def: WeaponDef): boolean {
-  return def.archetype !== 'melee' && def.archetype !== 'saw' && !def.opts?.drop;
+  return def.archetype !== 'melee' && def.archetype !== 'saw' && !def.opts?.drop && !def.opts?.pendulum;
 }
 
 /** Owns one behaviour instance per weapon (so in-flight projectiles survive switching). */
@@ -44,7 +62,7 @@ export class WeaponSystem {
   private behavior(def: WeaponDef): WeaponBehavior {
     let b = this.behaviors.get(def.id);
     if (!b) {
-      b = create(def, this.ctx);
+      b = createBehavior(def, this.ctx);
       this.behaviors.set(def.id, b);
     }
     return b;

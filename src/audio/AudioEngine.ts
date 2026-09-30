@@ -41,7 +41,17 @@ export type SoundName =
   | 'splash'
   | 'babble'
   | 'hum'
-  | 'yawn';
+  | 'yawn'
+  | 'thunder'
+  | 'plasma'
+  | 'sword'
+  | 'web'
+  | 'piano'
+  | 'guillotine'
+  | 'spikes'
+  | 'harpoon'
+  | 'ban'
+  | 'meteor';
 
 interface AmbiencePreset {
   noise?: { type: BiquadFilterType; freq: number; q: number; level: number; lfoRate?: number; lfoDepth?: number };
@@ -60,7 +70,7 @@ export const AMBIENCE: Record<string, AmbiencePreset> = {
   space: { drones: [[55, 0.02], [82.5, 0.012]], noise: { type: 'lowpass', freq: 260, q: 0.7, level: 0.025 } },
 };
 
-export type LoopName = 'chainsaw' | 'flame' | 'electric' | 'freezeRay';
+export type LoopName = 'chainsaw' | 'flame' | 'electric' | 'freezeRay' | 'vortex' | 'wind' | 'bees' | 'laser' | 'minigun' | 'tesla' | 'gravity';
 
 interface PlayOpts {
   intensity?: number;
@@ -420,6 +430,59 @@ export class AudioEngine {
         this.noise(out, t, 0.08, 'highpass', 5000, 4000, 0.7, 0.8, 0.001);
         [2093, 2637, 3136].forEach((f, i) => this.tone(out, t + 0.05 + i * 0.05, 0.6, 'triangle', f, f, 0.18, 0.002));
         break;
+      case 'thunder':
+        this.noise(out, t, 0.08, 'highpass', 3000, 2000, 0.7, 1.4, 0.001);
+        this.noise(out, t + 0.05, 2.2, 'lowpass', 1200 * p, 50, 0.7, 1.4, 0.01);
+        this.tone(out, t, 1.4, 'sine', 55 * p, 30, 1.2);
+        break;
+      case 'plasma':
+        this.tone(out, t, 0.25, 'sawtooth', 1400 * p, 180, 0.35);
+        this.tone(out, t, 0.2, 'sine', 900 * p, 2400, 0.3);
+        break;
+      case 'sword':
+        this.noise(out, t, 0.2, 'highpass', 4000 * p, 9000, 1.5, 0.7);
+        this.tone(out, t + 0.02, 0.6, 'sine', 2600 * p, 2550 * p, 0.25, 0.001);
+        this.tone(out, t + 0.02, 0.6, 'sine', 3900 * p, 3850 * p, 0.12, 0.001);
+        break;
+      case 'web':
+        this.noise(out, t, 0.12, 'bandpass', 2500 * p, 6000, 2, 0.8, 0.002);
+        this.tone(out, t, 0.08, 'sine', 900 * p, 2200, 0.2);
+        break;
+      case 'piano': {
+        // A piano hitting the floor: a dissonant cluster with a long decay plus a crash.
+        for (const f of [65.4, 69.3, 98, 103.8, 130.8, 155.6, 185, 233]) {
+          this.tone(out, t, 2.2, 'triangle', f * p, f * p * 0.995, 0.22, 0.002);
+          this.tone(out, t, 1.6, 'sine', f * 2 * p, f * 2 * p, 0.08, 0.002);
+        }
+        this.noise(out, t, 0.6, 'lowpass', 2500, 200, 0.7, 1.2, 0.002);
+        break;
+      }
+      case 'guillotine':
+        this.noise(out, t, 0.35, 'bandpass', 1800 * p, 3500, 3, 0.6, 0.02);
+        this.tone(out, t + 0.3, 0.15, 'triangle', 200 * p, 60, 1);
+        this.noise(out, t + 0.3, 0.2, 'lowpass', 1500, 200, 1, 1, 0.001);
+        break;
+      case 'spikes':
+        for (let i = 0; i < 6; i++) {
+          const ti = t + i * 0.02;
+          this.noise(out, ti, 0.06, 'highpass', 5000, 3000, 1, 0.5, 0.001);
+          this.tone(out, ti, 0.3, 'sine', rand(2000, 4200), rand(1800, 4000), 0.15, 0.001);
+        }
+        this.tone(out, t, 0.2, 'triangle', 180 * p, 70, 0.8);
+        break;
+      case 'harpoon':
+        for (let i = 0; i < 5; i++) this.tone(out, t + i * 0.04, 0.12, 'square', rand(700, 1100) * p, rand(600, 900), 0.08, 0.001);
+        this.noise(out, t, 0.1, 'bandpass', 3000 * p, 1500, 2, 0.6);
+        break;
+      case 'ban':
+        this.tone(out, t, 0.8, 'sine', 70 * p, 28, 1.6);
+        this.noise(out, t, 0.5, 'lowpass', 900, 80, 0.7, 1.3, 0.002);
+        this.tone(out, t, 0.4, 'square', 220 * p, 110, 0.15);
+        break;
+      case 'meteor':
+        this.tone(out, t, 1.1, 'sine', 2400 * p, 300, 0.35, 0.05);
+        this.noise(out, t, 1.1, 'bandpass', 800, 300, 1.5, 0.5, 0.2);
+        break;
       case 'babble': {
         // Corporate gibberish: a burst of short formant syllables.
         const vowels: Array<[[number, number], [number, number]]> = [
@@ -634,6 +697,112 @@ export class AudioEngine {
         n.connect(nf);
         nf.connect(ng);
         ng.connect(out);
+        break;
+      }
+      case 'vortex': {
+        const o = osc('sine', 40);
+        const o2 = osc('sawtooth', 80);
+        const lfo = osc('sine', 0.5);
+        const lg = ctx.createGain();
+        lg.gain.value = 30;
+        lfo.connect(lg);
+        lg.connect(o2.frequency);
+        const lp = filt('lowpass', 400);
+        const g1 = ctx.createGain();
+        g1.gain.value = 0.5;
+        o.connect(out);
+        o2.connect(lp);
+        lp.connect(g1);
+        g1.connect(out);
+        const n = noiseSrc();
+        const bp = filt('bandpass', 250, 1.2);
+        n.connect(bp);
+        bp.connect(out);
+        break;
+      }
+      case 'wind': {
+        const n = noiseSrc();
+        const bp = filt('bandpass', 500, 0.8);
+        const lfo = osc('sine', 0.7);
+        const lg = ctx.createGain();
+        lg.gain.value = 300;
+        lfo.connect(lg);
+        lg.connect(bp.frequency);
+        n.connect(bp);
+        bp.connect(out);
+        break;
+      }
+      case 'bees': {
+        for (const f of [220, 233, 247]) {
+          const o = osc('sawtooth', f);
+          const lfo = osc('sine', 5 + Math.random() * 4);
+          const lg = ctx.createGain();
+          lg.gain.value = 12;
+          lfo.connect(lg);
+          lg.connect(o.frequency);
+          const bp = filt('bandpass', 900, 2);
+          const g = ctx.createGain();
+          g.gain.value = 0.25;
+          o.connect(bp);
+          bp.connect(g);
+          g.connect(out);
+        }
+        break;
+      }
+      case 'laser': {
+        const o = osc('sawtooth', 880);
+        const lfo = osc('sine', 30);
+        const lg = ctx.createGain();
+        lg.gain.value = 40;
+        lfo.connect(lg);
+        lg.connect(o.frequency);
+        const bp = filt('bandpass', 1800, 3);
+        const g = ctx.createGain();
+        g.gain.value = 0.4;
+        o.connect(bp);
+        bp.connect(g);
+        g.connect(out);
+        break;
+      }
+      case 'minigun': {
+        const o = osc('square', 38);
+        const lp = filt('lowpass', 900);
+        o.connect(lp);
+        lp.connect(out);
+        const n = noiseSrc();
+        const hp = filt('bandpass', 2400, 1);
+        const g = ctx.createGain();
+        g.gain.value = 0.3;
+        n.connect(hp);
+        hp.connect(g);
+        g.connect(out);
+        break;
+      }
+      case 'tesla': {
+        const n = noiseSrc();
+        const hp = filt('highpass', 2500);
+        const o = osc('sawtooth', 120);
+        const lg = ctx.createGain();
+        lg.gain.value = 0.3;
+        o.connect(lg);
+        lg.connect(out);
+        n.connect(hp);
+        hp.connect(out);
+        break;
+      }
+      case 'gravity': {
+        const o = osc('sine', 110);
+        const o2 = osc('sine', 111.5);
+        const g = ctx.createGain();
+        g.gain.value = 0.5;
+        o.connect(g);
+        o2.connect(g);
+        g.connect(out);
+        const hi = osc('triangle', 1760);
+        const hg = ctx.createGain();
+        hg.gain.value = 0.05;
+        hi.connect(hg);
+        hg.connect(out);
         break;
       }
       case 'freezeRay': {

@@ -62,6 +62,11 @@ export class ViewModel {
     return out.copy(this.muzzleLocal).applyMatrix4(this.root.matrixWorld);
   }
 
+  /** A named sub-object of the held model (e.g. the minigun's 'barrels'). */
+  part(name: string): THREE.Object3D | null {
+    return this.model?.getObjectByName(name) ?? null;
+  }
+
   recoil(amount = 1): void {
     this.kick = Math.min(1.5, this.kick + amount);
   }

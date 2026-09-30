@@ -88,6 +88,11 @@ export class GrabController {
     this.target.copy(p);
   }
 
+  /** Move the hand straight to a world point (gravity gun). */
+  setTarget(p: THREE.Vector3): void {
+    this.target.copy(p);
+  }
+
   /** Push/pull the drag plane along its normal (mouse wheel). */
   depth(delta: number): void {
     if (!this.active) return;
