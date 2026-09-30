@@ -43,4 +43,15 @@ describe('Economy', () => {
     expect(e.spend(60)).toBe(true);
     expect(e.coins).toBe(40);
   });
+
+  it('scales payouts with the boss level / promotions, and milestone KOs pay triple', () => {
+    const base = new Economy();
+    const scaled = new Economy();
+    scaled.rewardScale = 2;
+    expect(scaled.onHit(res(40), 0)).toBe(base.onHit(res(40), 0) * 2);
+    const plain = new Economy().onHit(res(1, { killed: true }), 0);
+    const milestone = new Economy();
+    milestone.koBonusScale = 3;
+    expect(milestone.onHit(res(1, { killed: true }), 0)).toBeGreaterThanOrEqual(plain + 2 * DEFEAT_BONUS);
+  });
 });

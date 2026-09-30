@@ -40,4 +40,25 @@ describe('parseSave', () => {
     expect(s.settings).toEqual({ volume: 1, muted: false, gore: 'red', quality: 'high', autoQuality: true });
     expect(s.stats.kills).toBe(0);
   });
+
+  it('adds progression to old saves and sanitises it', () => {
+    const old = parseSave(JSON.stringify({ coins: 10 }), FREE_W, FREE_T);
+    expect(old.bossLevel).toBe(1);
+    expect(old.rank).toBe(1);
+    expect(old.xp).toBe(0);
+    expect(old.promotions).toBe(0);
+    expect(old.upgrades).toEqual({});
+    const s = parseSave(
+      JSON.stringify({ bossLevel: 0, rank: -3, xp: 'lots', promotions: 2.7, upgrades: { katana: 9, bat: 2, x: 'no' }, mastery: [1, 2], kosByTheme: { office: 4 } }),
+      FREE_W,
+      FREE_T,
+    );
+    expect(s.bossLevel).toBe(1);
+    expect(s.rank).toBe(1);
+    expect(s.xp).toBe(0);
+    expect(s.promotions).toBe(2);
+    expect(s.upgrades).toEqual({ katana: 5, bat: 2 });
+    expect(s.mastery).toEqual({});
+    expect(s.kosByTheme).toEqual({ office: 4 });
+  });
 });

@@ -39,15 +39,20 @@ export const SEVER_MULT: Record<DamageType, number> = {
 const BREAKS: Partial<Record<DamageType, number>> = { blunt: 1, explosive: 0.7, cold: 0.5 };
 
 export class DamageSystem {
-  hp = MAX_HP;
+  hp: number;
   dead = false;
   /** Accumulated damage per part, drives bruising and expression intensity. */
   readonly partDamage = new Map<PartName, number>();
 
-  constructor(private readonly target: DamageTarget) {}
+  constructor(
+    private readonly target: DamageTarget,
+    readonly maxHp = MAX_HP,
+  ) {
+    this.hp = maxHp;
+  }
 
   get hpFraction(): number {
-    return Math.max(0, this.hp / MAX_HP);
+    return Math.max(0, this.hp / this.maxHp);
   }
 
   apply(hit: HitInfo): HitResult {
@@ -99,7 +104,7 @@ export class DamageSystem {
   }
 
   reset(): void {
-    this.hp = MAX_HP;
+    this.hp = this.maxHp;
     this.dead = false;
     this.partDamage.clear();
   }

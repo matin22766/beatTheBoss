@@ -5,6 +5,18 @@ import { THEMES } from '../themes';
 import type { WeaponDef } from '../combat/weapons/types';
 import type { ThemeDef } from '../themes/Theme';
 import { audio } from '../audio/AudioEngine';
+import { MAX_TIER, MASTERY_STEPS, PROMOTE_AT, bossTitle, promotionMultiplier, requiredRank, stars, upgradeCost, xpToNext } from '../progression/Progression';
+
+export interface CareerData {
+  rank: number;
+  rankTitle: string;
+  xp: number;
+  bossLevel: number;
+  promotions: number;
+  stats: { hits: number; kills: number; severs: number; bestCombo: number };
+  kosByTheme: Record<string, number>;
+  goal: string;
+}
 
 export interface ShopHost {
   coins(): number;
@@ -18,7 +30,16 @@ export interface ShopHost {
   currentWeapon(): string;
   currentTheme(): string;
   toast(text: string): void;
+  rank(): number;
+  weaponTier(id: string): number;
+  masteryKills(id: string): number;
+  upgrade(id: string): boolean;
+  career(): CareerData;
+  canPromote(): boolean;
+  promote(): boolean;
 }
+
+type Tab = 'weapons' | 'arenas' | 'career';
 
 const SWATCH: Record<string, string> = {
   office: 'linear-gradient(135deg,#e3d9c2,#5d6b7e)',
@@ -44,7 +65,7 @@ const TYPE_LABEL: Record<string, string> = {
 /** Spend coins on weapons and arenas; equip what you own. */
 export class Shop {
   private modal: ModalHandle | null = null;
-  private tab: 'weapons' | 'arenas' = 'weapons';
+  private tab: Tab = 'weapons';
   private coinsEl: HTMLElement | null = null;
 
   constructor(
@@ -52,7 +73,7 @@ export class Shop {
     private readonly host: ShopHost,
   ) {}
 
-  open(tab: 'weapons' | 'arenas' = this.tab, focus?: string): void {
+  open(tab: Tab = this.tab, focus?: string): void {
     this.tab = tab;
     this.modal?.close();
     this.modal = openModal(this.parent, 'Shop', 'Earn coins with every hit and knockout. Spend them here.', () => (this.modal = null), 'shop-modal');
@@ -66,10 +87,11 @@ export class Shop {
     const tabs = h(
       'div',
       { class: 'seg shop-tabs' },
-      ...(['weapons', 'arenas'] as const).map((t) =>
+      ...(['weapons', 'arenas', 'career'] as const).map((t) =>
         h('button', {
           class: t === this.tab ? 'on' : '',
-          text: t === 'weapons' ? '🗡 Weapons' : '🏙 Arenas',
+          'data-tab': t,
+          text: t === 'weapons' ? '🗡 Weapons' : t === 'arenas' ? '🏙 Arenas' : '📈 Career',
           onclick: () => {
             this.tab = t;
             this.render();
@@ -77,7 +99,7 @@ export class Shop {
         }),
       ),
     );
-    const content = this.tab === 'weapons' ? this.weapons() : this.arenas();
+    const content = this.tab === 'weapons' ? this.weapons() : this.tab === 'arenas' ? this.arenas() : this.careerTab();
     this.modal.setContent(h('div', { class: 'shop-bar' }, tabs, this.coinsEl), content);
   }
 
@@ -103,13 +125,21 @@ export class Shop {
           { class: 'grid' },
           ...items.map((w) => {
             const owned = this.host.ownsWeapon(w.id);
+            const tier = owned ? this.host.weaponTier(w.id) : 0;
+            const need = owned ? 0 : requiredRank(w);
+            const kills = this.host.masteryKills(w.id);
+            const mastery = MASTERY_STEPS.filter((k) => kills >= k).length;
+            const dmg = w.damage * (w.opts?.pellets ?? 1) * (1 + 0.15 * tier) * (1 + 0.05 * mastery);
             return h(
               'div',
               { class: `card${this.host.currentWeapon() === w.id ? ' active' : ''}`, 'data-item': w.id },
               h('div', { class: 'big-ico', text: w.icon }),
               h('div', { class: 'title', text: w.name }),
-              h('div', { class: 'meta', text: `${TYPE_LABEL[w.type]} · ${Math.round(w.damage * (w.opts?.pellets ?? 1))} dmg` }),
-              this.buyButton(
+              h('div', { class: 'meta', text: `${TYPE_LABEL[w.type]} · ${Math.round(dmg)} dmg` }),
+              owned ? h('div', { class: 'stars', title: `Upgrade tier ${tier}/${MAX_TIER} · mastery ${mastery}/3 (${kills} KOs)`, text: `${stars(tier, MAX_TIER)}${mastery ? ` · ${'🏅'.repeat(mastery)}` : ''}` }) : null,
+              !owned && need > this.host.rank()
+                ? h('button', { class: 'buy locked', text: `🔒 Rank ${need} · $${w.price}`, disabled: true })
+                : this.buyButton(
                 w.price,
                 owned,
                 this.host.currentWeapon() === w.id,
@@ -119,12 +149,88 @@ export class Shop {
                   this.render();
                 },
               ),
+              owned ? this.upgradeButton(w) : null,
             );
           }),
         ),
       );
     }
     return wrap;
+  }
+
+  private upgradeButton(w: WeaponDef): HTMLElement {
+    const tier = this.host.weaponTier(w.id);
+    const cost = upgradeCost(w, tier);
+    if (cost === null) return h('button', { class: 'buy owned upgrade', text: 'MAXED ★★★★★', disabled: true });
+    return h('button', {
+      class: 'buy upgrade',
+      'data-upgrade': w.id,
+      text: `⬆ ${'★'.repeat(tier + 1)} · $${cost}`,
+      title: `+15% damage, −6% cooldown`,
+      disabled: this.host.coins() < cost,
+      onclick: () => {
+        if (!this.host.upgrade(w.id)) audio.play('squeak', { intensity: 0.5 });
+        this.render();
+      },
+    });
+  }
+
+  private careerTab(): HTMLElement {
+    const c = this.host.career();
+    const frac = Math.min(1, c.xp / xpToNext(c.rank));
+    const fill = h('div', { class: 'xp-fill' });
+    fill.style.transform = `scaleX(${frac})`;
+    const kos = Object.entries(c.kosByTheme)
+      .sort((a, b) => b[1] - a[1])
+      .map(([id, n]) => {
+        const t = THEMES.find((x) => x.id === id);
+        return h('div', {}, h('b', { text: String(n) }), `KOs · ${t?.name ?? id}`);
+      });
+    const promoteBtn = this.host.canPromote()
+      ? h('button', {
+          class: 'buy',
+          'data-promote': '1',
+          text: `⭐ Get promoted (coins ×${promotionMultiplier(c.promotions + 1).toFixed(2)})`,
+          onclick: () => {
+            if (this.host.promote()) this.modal?.close();
+          },
+        })
+      : h('button', { class: 'buy locked', text: `🔒 Promotion at boss LV ${PROMOTE_AT} (now ${c.bossLevel})`, disabled: true });
+    return h(
+      'div',
+      { class: 'career' },
+      h(
+        'div',
+        { class: 'panel' },
+        h('h4', { text: 'Your rank' }),
+        h('div', { class: 'big-line', text: `Rank ${c.rank} · ${c.rankTitle}` }),
+        h('div', { class: 'xp-bar big' }, fill),
+        h('div', { class: 'meta', text: `${Math.floor(c.xp)} / ${xpToNext(c.rank)} XP to the next rank` }),
+      ),
+      h(
+        'div',
+        { class: 'panel' },
+        h('h4', { text: 'The boss' }),
+        h('div', { class: 'big-line', text: `LV ${c.bossLevel} · ${bossTitle(c.bossLevel)}` }),
+        h('div', { class: 'meta', text: `Coins ×${promotionMultiplier(c.promotions).toFixed(2)} from ${c.promotions} promotion${c.promotions === 1 ? '' : 's'}. Promote at LV ${PROMOTE_AT}: the boss ladder resets, you keep everything and earn +25% coins forever.` }),
+        promoteBtn,
+      ),
+      h('div', { class: 'panel' }, h('h4', { text: 'Next goal' }), h('div', { class: 'big-line', text: `🎯 ${c.goal}` })),
+      h(
+        'div',
+        { class: 'panel' },
+        h('h4', { text: 'Lifetime' }),
+        h(
+          'div',
+          { class: 'stat-grid' },
+          h('div', {}, h('b', { text: String(c.stats.kills) }), 'Knockouts'),
+          h('div', {}, h('b', { text: String(c.stats.hits) }), 'Hits'),
+          h('div', {}, h('b', { text: String(c.stats.severs) }), 'Limbs severed'),
+          h('div', {}, h('b', { text: String(c.stats.bestCombo) }), 'Best combo'),
+          ...kos,
+        ),
+      ),
+    );
   }
 
   private arenas(): HTMLElement {

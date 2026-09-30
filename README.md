@@ -59,8 +59,16 @@ Everything runs locally in the browser. Uploaded photos never leave your device.
   - Low-gravity space station.
 - **Coins and shop**:
   - You earn coins on every hit, with combo multipliers and bonuses for severed limbs, broken bones and KOs.
-  - Spend them on weapons and arenas.
+  - Spend them on weapons, arenas and weapon upgrades (5 tiers: +15% damage, faster cooldown each).
   - Progress is saved in your browser.
+- **Progression**:
+  - **Boss levels**: every knockout brings a tougher boss (more HP, sharper dodging) who pays more,
+    from Assistant Manager up to Chairman of the Board. Every 5th boss wears a crown and pays ×3.
+  - **Rank and XP**: hits, severed limbs and KOs earn XP. Each rank pays a coin bonus, and premium
+    weapons unlock as you climb (Intern → Office Legend).
+  - **Mastery**: 10, 50 and 200 KOs with a weapon earn mastery stars (+5% damage each).
+  - **Promotion**: from boss level 20, reset the boss ladder for a permanent +25% coins.
+  - After each KO a results card shows coins, XP and your next goal. The Career tab tracks everything.
 - **Procedural sound**: every punch, bone crunch, slice, splat, gunshot, explosion, zap, grunt and
   scream is synthesised with the Web Audio API. Each arena has its own ambience.
 - **Performance**: fixed 60 Hz physics with interpolated rendering, hit-stop, slow-motion finishers,

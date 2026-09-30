@@ -11,6 +11,16 @@ export interface SaveData {
   theme: string;
   settings: { volume: number; muted: boolean; gore: GoreMode; quality: Quality; autoQuality: boolean };
   stats: { hits: number; kills: number; severs: number; bestCombo: number };
+  /** Progression: current boss level, player rank and XP into it, promotions (prestige). */
+  bossLevel: number;
+  rank: number;
+  xp: number;
+  promotions: number;
+  /** Weapon upgrade tier (0-5) and knockouts scored with each weapon (mastery). */
+  upgrades: Record<string, number>;
+  mastery: Record<string, number>;
+  /** Knockouts per arena. */
+  kosByTheme: Record<string, number>;
 }
 
 export const SAVE_KEY = 'bossSmash.save.v1';
@@ -25,7 +35,24 @@ export function defaultSave(freeWeapons: string[], freeThemes: string[]): SaveDa
     theme: freeThemes[0] ?? 'office',
     settings: { volume: 0.8, muted: false, gore: 'red', quality: 'high', autoQuality: true },
     stats: { hits: 0, kills: 0, severs: 0, bestCombo: 0 },
+    bossLevel: 1,
+    rank: 1,
+    xp: 0,
+    promotions: 0,
+    upgrades: {},
+    mastery: {},
+    kosByTheme: {},
   };
+}
+
+/** A string → integer map, clamped, with anything malformed dropped. */
+function intMap(v: unknown, min: number, max: number): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return out;
+  for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof x === 'number' && Number.isFinite(x) && k.length < 40) out[k] = Math.floor(Math.min(max, Math.max(min, x)));
+  }
+  return out;
 }
 
 const isStrArr = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string');
@@ -71,6 +98,13 @@ export function parseSave(raw: string | null, freeWeapons: string[], freeThemes:
       severs: Math.floor(num(st.severs, 0, 0)),
       bestCombo: Math.floor(num(st.bestCombo, 0, 0)),
     },
+    bossLevel: Math.floor(num(o.bossLevel, 1, 1, 9999)),
+    rank: Math.floor(num(o.rank, 1, 1, 999)),
+    xp: num(o.xp, 0, 0, 1e9),
+    promotions: Math.floor(num(o.promotions, 0, 0, 999)),
+    upgrades: intMap(o.upgrades, 0, 5),
+    mastery: intMap(o.mastery, 0, 1e9),
+    kosByTheme: intMap(o.kosByTheme, 0, 1e9),
   };
 }
 

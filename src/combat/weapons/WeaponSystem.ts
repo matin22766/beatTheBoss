@@ -68,6 +68,15 @@ export class WeaponSystem {
     return b;
   }
 
+  /** Drop a weapon's cached behaviour so it's rebuilt with new stats (upgrades). */
+  refresh(id: string): void {
+    const b = this.behaviors.get(id);
+    if (!b) return;
+    if (this.holding && this.current.id === id) this.up();
+    b.dispose();
+    this.behaviors.delete(id);
+  }
+
   select(def: WeaponDef): void {
     if (this.holding) this.up();
     this.current = def;

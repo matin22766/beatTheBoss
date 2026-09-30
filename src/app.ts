@@ -4,6 +4,7 @@ import { audio } from './audio/AudioEngine';
 import { FaceModal } from './ui/FaceModal';
 import { loadProfile } from './face/FaceProfile';
 import { Shop } from './ui/Shop';
+import { rankTitle } from './progression/Progression';
 import { openSettings } from './ui/Settings';
 import { THEMES } from './themes';
 
@@ -23,6 +24,16 @@ export async function startApp(canvas: HTMLCanvasElement, ui: HTMLElement): Prom
     currentWeapon: () => game.weapons.current.id,
     currentTheme: () => game.themeDef.id,
     toast: (t) => game.hud.toast(t),
+    rank: () => game.save.data.rank,
+    weaponTier: (id) => game.weaponTier(id),
+    masteryKills: (id) => game.save.data.mastery[id] ?? 0,
+    upgrade: (id) => game.upgradeWeapon(id),
+    career: () => {
+      const d = game.save.data;
+      return { rank: d.rank, rankTitle: rankTitle(d.rank), xp: d.xp, bossLevel: d.bossLevel, promotions: d.promotions, stats: d.stats, kosByTheme: d.kosByTheme, goal: game.nextGoal() };
+    },
+    canPromote: () => game.canPromote(),
+    promote: () => game.promote(),
   });
   game.onLockedWeapon = (w) => shop.open('weapons', w.id);
   const soundIcon = () => (audio.muted ? '🔇' : '🔊');
@@ -30,6 +41,7 @@ export async function startApp(canvas: HTMLCanvasElement, ui: HTMLElement): Prom
     { id: 'face', icon: '📷', label: 'Boss face', onClick: () => faceModal.open() },
     { id: 'shop', icon: '🛒', label: 'Shop', onClick: () => shop.open('weapons') },
     { id: 'arena', icon: '🏙️', label: 'Arenas', onClick: () => shop.open('arenas') },
+    { id: 'career', icon: '📈', label: 'Career', onClick: () => shop.open('career') },
     { id: 'settings', icon: '⚙️', label: 'Settings', onClick: () => openSettings(ui, game) },
     { id: 'respawn', icon: '🔄', label: 'New boss (R)', onClick: () => game.spawnBoss() },
     {

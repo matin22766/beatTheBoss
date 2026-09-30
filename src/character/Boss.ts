@@ -18,6 +18,7 @@ import { RAPIER } from '../physics/PhysicsWorld';
 import { Injuries, injuryFor } from '../gore/Injuries';
 import { PART_NAMES } from './RagdollDef';
 import { ContactShadows } from './ContactShadows';
+import { bossMaxHp, isMilestone } from '../progression/Progression';
 
 /** The boss: physics ragdoll + visuals + damage, reacting to every hit. */
 export class Boss {
@@ -53,6 +54,8 @@ export class Boss {
     private readonly fx: Effects,
     origin = new THREE.Vector3(),
     face?: FaceProfile | null,
+    /** Boss level: more HP, sharper dodging, and a crown every fifth level. */
+    readonly level = 1,
   ) {
     this.ragdoll = new Ragdoll(physics, origin);
     this.mesh = new BossMesh();
@@ -63,7 +66,8 @@ export class Boss {
     }
     this.mesh.addTo(scene);
     for (const [name, part] of this.ragdoll.parts) this.sync.add(part.body, this.mesh.parts.get(name)!);
-    this.damage = new DamageSystem(this.ragdoll);
+    this.damage = new DamageSystem(this.ragdoll, bossMaxHp(level));
+    if (isMilestone(level)) this.mesh.crown();
     this.physics = physics;
     this.ragdoll.onStep = (foot) => {
       audio.play('step', { intensity: 0.2 });

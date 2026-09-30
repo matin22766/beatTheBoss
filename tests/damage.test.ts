@@ -93,6 +93,16 @@ describe('DamageSystem', () => {
     d.apply(hit('handL', 40, 'blunt'));
     expect(d.hp).toBe(hpBefore);
   });
+
+  it('tougher bosses have more HP', () => {
+    const d = new DamageSystem(fakeTarget(), 800);
+    expect(d.hp).toBe(800);
+    d.apply(hit('chest', 100, 'blunt'));
+    expect(d.hpFraction).toBeCloseTo((800 - d.partDamage.get('chest')! * 1.2) / 800, 1);
+    expect(d.dead).toBe(false);
+    d.reset();
+    expect(d.hp).toBe(800);
+  });
 });
 
 describe('pickDeathStyle', () => {

@@ -16,6 +16,26 @@ import { ViewModel } from '../combat/weapons/ViewModel';
 import { WeaponBar } from '../ui/WeaponBar';
 import { DeathDirector } from '../death/DeathDirector';
 import { WEAPONS } from '../combat/weapons/weaponDefs';
+import {
+  addXp,
+  bossDodgeScale,
+  bossRewardScale,
+  bossTitle,
+  canPromote,
+  isMilestone,
+  koXp,
+  masteryStars,
+  MASTERY_STEPS,
+  MILESTONE_BONUS,
+  promotionMultiplier,
+  rankReward,
+  rankTitle,
+  requiredRank,
+  upgradeCost,
+  upgradedDef,
+  xpToNext,
+  XP,
+} from '../progression/Progression';
 import type { Aim, BossHit, WeaponCtx, WeaponDef } from '../combat/weapons/types';
 import { Economy } from '../economy/Economy';
 import { Hud } from '../ui/Hud';
@@ -87,6 +107,9 @@ export class Game {
   bulletTime = false;
   private bulletScale = 1;
   private respawnT = -1;
+  /** Coins and XP earned from the current boss (for the knockout results card). */
+  private bossCoins = 0;
+  private bossXp = 0;
   private preVel = new Map<number, THREE.Vector3>();
   private impactCooldown = 0;
   private running = true;
@@ -175,6 +198,8 @@ export class Game {
       isOwned: (d) => this.isOwned(d),
       onSelect: (d) => this.selectWeapon(d),
       onLocked: (d) => this.onLockedWeapon(d),
+      tier: (d) => this.weaponTier(d.id),
+      rankNeeded: (d) => (this.rankLocked(d) ? requiredRank(d) : 0),
     });
     this.deaths = new DeathDirector({
       scene: this.scene,
@@ -186,6 +211,7 @@ export class Game {
     });
 
     this.hud.setCoins(this.economy.coins, false);
+    this.updateRankHud();
     this.selectWeapon(this.weapons.current, false);
     this.spawnBoss();
     this.wireEvents();
@@ -302,6 +328,7 @@ export class Game {
     this.save.reset();
     this.economy.coins = 0;
     this.hud.setCoins(0, false);
+    this.updateRankHud();
     this.selectWeapon(WEAPONS[0], false);
     this.setTheme(themeById(this.save.data.theme));
     this.weaponBar.render();
@@ -312,11 +339,21 @@ export class Game {
     if (this.boss) this.boss.dispose();
     this.fx.clearSpurts();
     this.deaths.reset();
-    this.boss = new Boss(this.physics, this.scene, this.sync, this.events, this.fx, new THREE.Vector3(0, 0.02, 0), this.faceProfile);
+    const level = this.save.data.bossLevel;
+    this.boss = new Boss(this.physics, this.scene, this.sync, this.events, this.fx, new THREE.Vector3(0, 0.02, 0), this.faceProfile, level);
     this.impactCooldown = 0;
     this.boss.seats = this.props;
-    this.boss.brain.dodgeScale = this.dodgeScale;
+    this.boss.brain.dodgeScale = this.dodgeScale * bossDodgeScale(level);
     this.respawnT = -1;
+    this.economy.rewardScale = bossRewardScale(level) * promotionMultiplier(this.save.data.promotions);
+    this.economy.koBonusScale = isMilestone(level) ? MILESTONE_BONUS : 1;
+    this.bossCoins = 0;
+    this.bossXp = 0;
+    this.hud.setBossName(`LV ${level} · ${bossTitle(level)}`);
+    if (isMilestone(level)) {
+      this.hud.banner(`MILESTONE BOSS! ×${MILESTONE_BONUS} KO BONUS`);
+      audio.play('cheer', { intensity: 0.6 });
+    }
     this.hud.setHp(1, false);
     this.events.emit('respawn', {});
   }
@@ -362,6 +399,11 @@ export class Game {
       stats.bestCombo = Math.max(stats.bestCombo, this.economy.combo);
       this.save.data.coins = this.economy.coins;
       this.save.save();
+      this.bossCoins += earned;
+      // No XP for beating on the body once he's down (the finishing blow still counts).
+      if (this.boss && (!this.boss.dead || result.killed)) {
+        this.gainXp(result.dealt * XP.perDamage + result.severed.length * XP.perSever + result.broke.length * XP.perBreak);
+      }
       if (earned > 0) {
         this.hud.setCoins(this.economy.coins);
         const s = this.toScreen(hit.point);
@@ -376,9 +418,9 @@ export class Game {
       this.grab.release();
       this.hud.setHp(0, true);
       this.save.data.stats.kills++;
-      this.save.save();
       if (this.themeDef.id === 'ring') audio.play('cheer', { intensity: 0.8 });
       this.respawnT = this.deaths.play(style, this.boss, cause);
+      this.onKnockout(cause.source);
     });
   }
 
@@ -724,7 +766,7 @@ export class Game {
       this.onLockedWeapon(def);
       return;
     }
-    this.weapons.select(def);
+    this.weapons.select(this.effectiveDef(def));
     this.weaponBar.setActive(def.id);
     this.canvas.classList.toggle('aiming', usesViewModel(def));
     this.save.data.weapon = def.id;
@@ -757,6 +799,153 @@ export class Game {
 
   hasFace(): boolean {
     return !!this.faceProfile;
+  }
+
+  // ---------------------------------------------------------------- progression
+
+  /** The weapon as it fights: upgrade tier and mastery applied. */
+  effectiveDef(def: WeaponDef): WeaponDef {
+    return upgradedDef(def, this.weaponTier(def.id), this.masteryStarsOf(def.id));
+  }
+
+  weaponTier(id: string): number {
+    return this.save.data.upgrades[id] ?? 0;
+  }
+
+  masteryStarsOf(id: string): number {
+    return masteryStars(this.save.data.mastery[id] ?? 0);
+  }
+
+  /** Premium weapon you haven't reached the rank for yet. */
+  rankLocked(def: WeaponDef): boolean {
+    return !this.isOwned(def) && this.save.data.rank < requiredRank(def);
+  }
+
+  /** Buy the next upgrade tier for an owned weapon. */
+  upgradeWeapon(id: string): boolean {
+    const def = WEAPONS.find((w) => w.id === id);
+    if (!def || !this.isOwned(def)) return false;
+    const tier = this.weaponTier(id);
+    const cost = upgradeCost(def, tier);
+    if (cost === null || !this.spend(cost)) return false;
+    this.save.data.upgrades[id] = tier + 1;
+    this.save.flush();
+    this.refreshWeapon(id);
+    audio.play('kaching', { intensity: 0.9 });
+    this.hud.toast(`${def.name} upgraded to ${'★'.repeat(tier + 1)}`);
+    return true;
+  }
+
+  private refreshWeapon(id: string): void {
+    this.weapons.refresh(id);
+    if (this.weapons.current.id === id) this.weapons.select(this.effectiveDef(WEAPONS.find((w) => w.id === id)!));
+    this.weaponBar.render();
+  }
+
+  /** Add XP; every rank reached pays out coins and gets a celebration. */
+  gainXp(amount: number): void {
+    if (amount <= 0) return;
+    this.bossXp += amount;
+    const d = this.save.data;
+    const { state, rankUps } = addXp({ rank: d.rank, xp: d.xp }, amount);
+    d.rank = state.rank;
+    d.xp = state.xp;
+    if (rankUps.length) {
+      // One celebration even if several ranks were crossed at once.
+      const gift = rankUps.reduce((sum, r) => sum + rankReward(r), 0);
+      const top = rankUps[rankUps.length - 1];
+      this.economy.coins += gift;
+      d.coins = this.economy.coins;
+      this.hud.setCoins(this.economy.coins);
+      this.hud.levelUp(`RANK UP! ${rankTitle(top).toUpperCase()}`, `Rank ${top} · +$${gift}`);
+      audio.play('kaching', { intensity: 1 });
+      audio.play('cheer', { intensity: 0.7 });
+      const unlocked = WEAPONS.filter((w) => rankUps.includes(requiredRank(w)) && !this.isOwned(w));
+      if (unlocked.length) this.hud.toast(`Now in the shop: ${unlocked.map((w) => `${w.icon} ${w.name}`).join(', ')}`);
+    }
+    if (rankUps.length) this.weaponBar.render();
+    this.updateRankHud();
+    this.save.save();
+  }
+
+  updateRankHud(): void {
+    const d = this.save.data;
+    this.hud.setRank(d.rank, rankTitle(d.rank), d.xp / xpToNext(d.rank), d.promotions);
+  }
+
+  private onKnockout(source: string): void {
+    const d = this.save.data;
+    const level = d.bossLevel;
+    d.kosByTheme[this.themeDef.id] = (d.kosByTheme[this.themeDef.id] ?? 0) + 1;
+    // Mastery: knockouts scored with a weapon.
+    const weapon = WEAPONS.find((w) => w.id === source);
+    if (weapon) {
+      const before = this.masteryStarsOf(weapon.id);
+      d.mastery[weapon.id] = (d.mastery[weapon.id] ?? 0) + 1;
+      const after = this.masteryStarsOf(weapon.id);
+      if (after > before) {
+        this.hud.toast(`${weapon.icon} ${weapon.name} mastery ${'★'.repeat(after)} (+${after * 5}% damage)`);
+        this.refreshWeapon(weapon.id);
+      }
+    }
+    this.gainXp(koXp(level));
+    d.bossLevel = level + 1;
+    this.save.flush();
+    this.hud.resultsCard({
+      coins: Math.round(this.bossCoins),
+      xp: Math.round(this.bossXp),
+      rank: d.rank,
+      rankTitle: rankTitle(d.rank),
+      rankFrac: d.xp / xpToNext(d.rank),
+      next: `Next: LV ${d.bossLevel} ${bossTitle(d.bossLevel)}${isMilestone(d.bossLevel) ? ' 👑' : ''}`,
+      goal: this.nextGoal(),
+    });
+  }
+
+  /** The nearest thing worth chasing, for the results card. */
+  nextGoal(): string {
+    const d = this.save.data;
+    const locked = WEAPONS.filter((w) => !this.isOwned(w) && requiredRank(w) > d.rank).sort((a, b) => requiredRank(a) - requiredRank(b))[0];
+    if (locked && requiredRank(locked) - d.rank <= 2) {
+      const n = requiredRank(locked) - d.rank;
+      return `${n} rank${n > 1 ? 's' : ''} to unlock ${locked.icon} ${locked.name}`;
+    }
+    const buyable = WEAPONS.filter((w) => !this.isOwned(w) && !this.rankLocked(w)).sort((a, b) => a.price - b.price)[0];
+    if (buyable && buyable.price > this.economy.coins) return `$${buyable.price - this.economy.coins} more for ${buyable.icon} ${buyable.name}`;
+    if (buyable) return `You can buy ${buyable.icon} ${buyable.name} now!`;
+    const cur = WEAPONS.find((w) => w.id === this.weapons.current.id)!;
+    const cost = upgradeCost(cur, this.weaponTier(cur.id));
+    if (cost !== null) return `Upgrade ${cur.icon} ${cur.name} to ${'★'.repeat(this.weaponTier(cur.id) + 1)} for $${cost}`;
+    if (canPromote(d.bossLevel)) return 'Promotion available in the Career tab!';
+    const kills = d.mastery[cur.id] ?? 0;
+    const step = MASTERY_STEPS.find((k) => k > kills);
+    if (step) return `${step - kills} more KOs with ${cur.name} for a mastery star`;
+    return `Promotion at boss LV 20`;
+  }
+
+  canPromote(): boolean {
+    return canPromote(this.save.data.bossLevel);
+  }
+
+  /** Prestige: reset the boss ladder for a permanent coin multiplier. */
+  promote(): boolean {
+    const d = this.save.data;
+    if (!canPromote(d.bossLevel)) return false;
+    d.promotions++;
+    d.bossLevel = 1;
+    this.save.flush();
+    this.updateRankHud();
+    this.hud.levelUp('PROMOTION!', `Permanent coins ×${promotionMultiplier(d.promotions).toFixed(2)}`);
+    audio.play('cheer', { intensity: 1 });
+    audio.play('kaching', { intensity: 1 });
+    this.spawnBoss();
+    return true;
+  }
+
+  /** Debug/test hook. */
+  setBossLevel(level: number): void {
+    this.save.data.bossLevel = Math.max(1, Math.floor(level));
+    this.spawnBoss();
   }
 
   /** Debug/test hook: kill the boss with a specific death style. */

@@ -5,7 +5,7 @@ import { mkdirSync, existsSync } from 'node:fs';
 
 const url = process.argv[2] ?? 'http://localhost:5173/?debug';
 // SMOKE=basic,weapons,deaths (default: all). The software renderer is slow, so run sections separately.
-const sections = new Set((process.env.SMOKE ?? 'basic,bullettime,camera,props,brain,dodge,weapons,deaths,face,shop,themes').split(','));
+const sections = new Set((process.env.SMOKE ?? 'basic,bullettime,camera,props,brain,dodge,weapons,deaths,face,shop,themes,progression').split(','));
 const out = 'smoke-out';
 mkdirSync(out, { recursive: true });
 const exe = ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome', '/opt/pw-browsers/chromium'].find((p) => existsSync(p));
@@ -169,9 +169,20 @@ if (sections.has('props')) {
 if (sections.has('brain')) {
   await page.evaluate(() => window.__game.setTheme(window.__themes[0]));
   await waitGame(1.5);
-  await page.evaluate(() => window.__game.boss.brain['start']('sit'));
-  await waitGame(9);
-  const sat = await page.evaluate(() => window.__game.boss.brain.state);
+  // Physics can make an attempt fail (he bumps the chair, stumbles): allow a few tries.
+  let sat = '';
+  for (let attempt = 0; attempt < 3 && sat !== 'sitting'; attempt++) {
+    await page.evaluate(() => {
+      const b = window.__game.boss.brain;
+      b.interrupt();
+      b['start']('sit');
+    });
+    for (let t = 0; t < 12 && sat !== 'sitting'; t++) {
+      await waitGame(1);
+      sat = await page.evaluate(() => window.__game.boss.brain.state);
+      if (sat === 'recover' || sat === 'idle') break;
+    }
+  }
   await shot('b-sit');
   if (sat !== 'sitting') errors.push('boss never sat down, state=' + sat);
   // Throw the chair with him on it.
@@ -219,14 +230,17 @@ if (sections.has('brain')) {
     }
   }
   console.log('walking: highest lowest-foot', worst.toFixed(3));
-  await page.evaluate(() => {
-    const b = window.__game.boss.brain;
-    b.interrupt();
-    b['start']('floorSit');
-  });
-  await waitGame(3);
+  let floorSit = { state: '', pelvis: 1 };
+  for (let attempt = 0; attempt < 3 && !(floorSit.state === 'floorSit' && floorSit.pelvis < 0.4); attempt++) {
+    await page.evaluate(() => {
+      const b = window.__game.boss.brain;
+      b.interrupt();
+      b['start']('floorSit');
+    });
+    await waitGame(3);
+    floorSit = await page.evaluate(() => ({ state: window.__game.boss.brain.state, pelvis: window.__game.boss.ragdoll.position('pelvis').y }));
+  }
   await shot('b-floor-sit');
-  const floorSit = await page.evaluate(() => ({ state: window.__game.boss.brain.state, pelvis: window.__game.boss.ragdoll.position('pelvis').y }));
   if (floorSit.state !== 'floorSit' || floorSit.pelvis > 0.4) errors.push('floor sit failed: ' + JSON.stringify(floorSit));
   // A shove: he should catch himself with a step (and stay up).
   await page.evaluate(() => {
@@ -309,12 +323,78 @@ const dud = Object.entries(results).filter(([, d]) => d <= 0).map(([k]) => k);
 if (dud.length) errors.push('weapons dealt no damage: ' + dud.join(', '));
 }
 
+// ---- Progression: boss levels, rank/XP, upgrades, promotion ----
+if (sections.has('progression')) {
+  await page.evaluate(() => window.__game.spawnBoss());
+  await waitGame(1);
+  const before = await page.evaluate(() => ({ level: window.__game.save.data.bossLevel, xp: window.__game.save.data.xp, rank: window.__game.save.data.rank }));
+  await shot('p-hud');
+  const card = await page.evaluate(() => {
+    window.__game.debugKill('crumple');
+    return !!document.querySelector('.results-card');
+  });
+  await wait(900);
+  await shot('p-results');
+  const after = await page.evaluate(() => ({
+    level: window.__game.save.data.bossLevel,
+    xp: window.__game.save.data.xp,
+    rank: window.__game.save.data.rank,
+  }));
+  after.card = card;
+  if (after.level !== before.level + 1) errors.push(`boss level did not go up: ${JSON.stringify([before, after])}`);
+  if (after.rank === before.rank && after.xp <= before.xp) errors.push('no XP for the knockout');
+  if (!after.card) errors.push('results card missing');
+  await waitGame(4);
+  const name = await page.evaluate(() => document.querySelector('.boss-name span')?.textContent ?? '');
+  if (!name.startsWith(`LV ${after.level}`)) errors.push('HUD boss level wrong: ' + name);
+  // Rank up.
+  const r0 = await page.evaluate(() => ({ rank: window.__game.save.data.rank, coins: window.__game.economy.coins }));
+  const r1 = await page.evaluate(() => {
+    window.__game.gainXp(5000);
+    return { rank: window.__game.save.data.rank, coins: window.__game.economy.coins, banner: !!document.querySelector('.level-up') };
+  });
+  await wait(300);
+  await shot('p-rankup');
+  if (r1.rank <= r0.rank || r1.coins <= r0.coins || !r1.banner) errors.push('rank-up failed: ' + JSON.stringify([r0, r1]));
+  // Upgrade the axe and check it hits harder.
+  const dmg = await page.evaluate(() => {
+    const g = window.__game;
+    g.unlockWeapon('axe');
+    g.economy.coins = 100000;
+    const axe = g.weaponBar.visible().find((w) => w.id === 'axe');
+    const d0 = g.effectiveDef(axe).damage;
+    const ok = g.upgradeWeapon('axe') && g.upgradeWeapon('axe');
+    g.selectWeapon(axe);
+    return { ok, d0, d2: g.weapons.current.damage, tier: g.save.data.upgrades.axe };
+  });
+  if (!dmg.ok || dmg.tier !== 2 || !(dmg.d2 > dmg.d0)) errors.push('upgrade failed: ' + JSON.stringify(dmg));
+  await page.evaluate(() => window.__shop.open('weapons', 'axe'));
+  await wait(500);
+  await shot('p-shop-upgrades');
+  await page.keyboard.press('Escape');
+  // Milestone boss and promotion.
+  await page.evaluate(() => window.__game.setBossLevel(20));
+  await waitGame(1.5);
+  await shot('p-milestone');
+  await page.evaluate(() => window.__shop.open('career'));
+  await wait(500);
+  await shot('p-career');
+  await page.click('[data-promote]');
+  await waitGame(0.5);
+  const promo = await page.evaluate(() => ({ level: window.__game.save.data.bossLevel, promotions: window.__game.save.data.promotions, scale: window.__game.economy.rewardScale }));
+  if (promo.level !== 1 || promo.promotions !== 1 || Math.abs(promo.scale - 1.25) > 1e-6) errors.push('promotion failed: ' + JSON.stringify(promo));
+  await shot('p-promoted');
+}
+
 // ---- Shop: buy a weapon with coins ----
 if (sections.has('shop')) {
   await page.evaluate(() => {
     const g = window.__game;
     g.economy.coins = 5000;
     g.hud.setCoins(5000, false);
+    g.save.data.rank = Math.max(g.save.data.rank, 5);
+    g.save.data.ownedWeapons = g.save.data.ownedWeapons.filter((id) => id !== 'katana');
+    if (g.weapons.current.id === 'katana') g.selectWeapon(g.weaponBar.visible()[0], false);
     window.__shop.open('weapons', 'katana');
   });
   await wait(500);

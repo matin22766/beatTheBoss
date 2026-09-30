@@ -1,5 +1,16 @@
 import { h } from './dom';
 
+export interface ResultsData {
+  coins: number;
+  xp: number;
+  rank: number;
+  rankTitle: string;
+  /** Progress into the current rank, 0..1. */
+  rankFrac: number;
+  next: string;
+  goal: string;
+}
+
 export interface SideAction {
   id: string;
   icon: string;
@@ -24,6 +35,10 @@ export class Hud {
   private bulletTime: HTMLElement;
   private displayedCoins = 0;
   private targetCoins = 0;
+  private rankEl: HTMLElement;
+  private rankFill: HTMLElement;
+  private promoEl: HTMLElement;
+  private results: HTMLElement | null = null;
 
   constructor(parent: HTMLElement) {
     this.hpFill = h('div', { class: 'fill' });
@@ -34,6 +49,9 @@ export class Hud {
     this.coinsEl = h('span', { text: '0' });
     this.wallet = h('div', { class: 'wallet', title: 'Coins' }, h('span', { class: 'coin', text: '$' }), this.coinsEl);
     this.comboEl = h('div', { class: 'combo' });
+    this.rankEl = h('span', { class: 'rank-title', text: 'Rank 1 · Intern' });
+    this.rankFill = h('div', { class: 'xp-fill' });
+    this.promoEl = h('span', { class: 'promo-badge' });
     this.popups = h('div', { class: 'popups' });
     this.side = h('div', { class: 'side' });
     this.bulletTime = h('div', { class: 'bullet-time' }, h('div', { class: 'bt-label', text: 'SLOW-MO' }));
@@ -47,7 +65,13 @@ export class Hud {
         'div',
         { class: 'hud-top' },
         h('div', { class: 'boss-card' }, h('div', { class: 'boss-name' }, this.bossName, this.hpText), this.hpBar),
-        h('div', {}, this.wallet, this.comboEl),
+        h(
+          'div',
+          { class: 'hud-right' },
+          h('div', { class: 'wallet-row' }, this.promoEl, this.wallet),
+          h('div', { class: 'rank-card', title: 'Rank: earn XP by hitting, severing and knocking him out' }, this.rankEl, h('div', { class: 'xp-bar' }, this.rankFill)),
+          this.comboEl,
+        ),
       ),
       this.side,
       this.bottom,
@@ -97,6 +121,64 @@ export class Hud {
       void this.wallet.offsetWidth;
       this.wallet.classList.add('bump');
     }
+  }
+
+  setRank(rank: number, title: string, frac: number, promotions: number): void {
+    this.rankEl.textContent = `Rank ${rank} · ${title}`;
+    this.rankFill.style.transform = `scaleX(${Math.max(0, Math.min(1, frac))})`;
+    this.promoEl.textContent = promotions > 0 ? `⭐×${promotions}` : '';
+    this.promoEl.title = promotions > 0 ? `${promotions} promotion${promotions > 1 ? 's' : ''}: coins ×${(1 + 0.25 * promotions).toFixed(2)}` : '';
+  }
+
+  /** Big celebratory banner (rank-ups, promotions). */
+  levelUp(title: string, sub: string): void {
+    const el = h('div', { class: 'level-up' }, h('div', { class: 'lu-title', text: title }), h('div', { class: 'lu-sub', text: sub }));
+    for (let i = 0; i < 24; i++) {
+      const c = h('i', { class: 'confetti' });
+      c.style.left = `${Math.random() * 100}%`;
+      c.style.animationDelay = `${Math.random() * 0.4}s`;
+      c.style.background = ['#ffcc33', '#ff3b30', '#34c759', '#0a84ff', '#bf5af2'][i % 5];
+      el.append(c);
+    }
+    this.root.append(el);
+    setTimeout(() => el.remove(), 2600);
+  }
+
+  /** Knockout summary: coins, XP (rank bar fills up), what's next and the nearest goal. */
+  resultsCard(d: ResultsData): void {
+    this.results?.remove();
+    const coins = h('span', { class: 'rc-num', text: '+0' });
+    const xp = h('span', { class: 'rc-num', text: '+0' });
+    const fill = h('div', { class: 'xp-fill' });
+    const card = h(
+      'div',
+      { class: 'results-card' },
+      h('div', { class: 'rc-head', text: 'K.O.!' }),
+      h('div', { class: 'rc-row' }, h('span', { text: '💰 Coins' }), coins),
+      h('div', { class: 'rc-row' }, h('span', { text: '⭐ XP' }), xp),
+      h('div', { class: 'rc-rank', text: `Rank ${d.rank} · ${d.rankTitle}` }),
+      h('div', { class: 'xp-bar big' }, fill),
+      h('div', { class: 'rc-next', text: d.next }),
+      h('div', { class: 'rc-goal', text: `🎯 ${d.goal}` }),
+    );
+    this.results = card;
+    this.root.append(card);
+    // Tick the numbers up.
+    const start = performance.now();
+    const tick = () => {
+      if (!card.isConnected) return;
+      const k = Math.min(1, (performance.now() - start) / 900);
+      const e = 1 - (1 - k) ** 3;
+      coins.textContent = `+${Math.round(d.coins * e)}`;
+      xp.textContent = `+${Math.round(d.xp * e)}`;
+      fill.style.transform = `scaleX(${Math.max(0, Math.min(1, d.rankFrac)) * e})`;
+      if (k < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    setTimeout(() => {
+      card.classList.add('out');
+      setTimeout(() => card.remove(), 400);
+    }, 3600);
   }
 
   setCombo(combo: number, mult: number): void {

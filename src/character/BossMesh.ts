@@ -181,6 +181,36 @@ export class BossMesh {
     for (const m of face.materials ?? []) if (m instanceof THREE.MeshToonMaterial) this.baseColors.set(m, m.color.clone());
   }
 
+  /** Milestone boss: a gold crown and a gold tie. */
+  crown(): void {
+    this.materials.tie.color.set(0xf1c40f);
+    this.baseColors.set(this.materials.tie, this.materials.tie.color.clone());
+    const gold = new THREE.MeshToonMaterial({ color: 0xffc933, emissive: 0x3a2a00 });
+    this.baseColors.set(gold, gold.color.clone());
+    const crown = new THREE.Group();
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.15, 0.08, 20, 1, true), gold);
+    band.material.side = THREE.DoubleSide;
+    crown.add(band);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.1, 5), gold);
+      spike.position.set(Math.cos(a) * 0.15, 0.08, Math.sin(a) * 0.15);
+      crown.add(spike);
+      const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.018), new THREE.MeshToonMaterial({ color: i % 2 ? 0xc0392b : 0x2e86de }));
+      gem.position.set(Math.cos(a) * 0.162, 0.0, Math.sin(a) * 0.162);
+      crown.add(gem);
+    }
+    crown.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        o.castShadow = true;
+        this.geoms.push(o.geometry);
+      }
+    });
+    crown.position.y = 0.24;
+    crown.rotation.z = 0.12;
+    this.parts.get('head')!.add(crown);
+  }
+
   /** Skin tone for head, neck, ears and hands. */
   setSkinColor(color: THREE.ColorRepresentation): void {
     this.materials.skin.color.set(color);

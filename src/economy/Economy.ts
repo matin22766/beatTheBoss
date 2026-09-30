@@ -9,6 +9,10 @@ export const DEFEAT_BONUS = 150;
 export class Economy {
   coins = 0;
   combo = 0;
+  /** Boss-level and promotion multiplier on every payout. */
+  rewardScale = 1;
+  /** Extra multiplier on the knockout bonus (milestone bosses). */
+  koBonusScale = 1;
   private lastHitAt = -Infinity;
 
   constructor(initialCoins = 0) {
@@ -26,7 +30,8 @@ export class Economy {
     this.lastHitAt = now;
     let earned = Math.max(1, Math.round(result.dealt * 0.5 * this.multiplier));
     earned += result.severed.length * SEVER_BONUS + result.broke.length * BREAK_BONUS;
-    if (result.killed) earned += DEFEAT_BONUS + result.severed.length * 10;
+    if (result.killed) earned += Math.round((DEFEAT_BONUS + result.severed.length * 10) * this.koBonusScale);
+    earned = Math.max(1, Math.round(earned * this.rewardScale));
     this.coins += earned;
     return earned;
   }

@@ -7,6 +7,10 @@ export interface WeaponBarOpts {
   isOwned(def: WeaponDef): boolean;
   onSelect(def: WeaponDef): void;
   onLocked(def: WeaponDef): void;
+  /** Upgrade tier (0-5) and mastery stars, shown on the button. */
+  tier?(def: WeaponDef): number;
+  /** Rank still needed to buy it (0 = buyable). */
+  rankNeeded?(def: WeaponDef): number;
 }
 
 /** Bottom bar with category tabs; number keys pick from the visible list. */
@@ -53,18 +57,21 @@ export class WeaponBar {
     this.list.replaceChildren(
       ...this.visible().map((w, i) => {
         const owned = this.opts.isOwned(w);
+        const tier = owned ? (this.opts.tier?.(w) ?? 0) : 0;
+        const rank = owned ? 0 : (this.opts.rankNeeded?.(w) ?? 0);
         return h(
           'button',
           {
             class: `weapon${w.id === this.activeId ? ' active' : ''}${owned ? '' : ' locked'}`,
-            title: owned ? w.name : `${w.name}: ${w.price} coins`,
+            title: owned ? `${w.name}${tier ? ` ${'★'.repeat(tier)}` : ''}` : rank ? `${w.name}: reach rank ${rank}` : `${w.name}: ${w.price} coins`,
             'data-weapon': w.id,
             onclick: () => (owned ? this.opts.onSelect(w) : this.opts.onLocked(w)),
           },
           i < 9 ? h('span', { class: 'key', text: String(i + 1) }) : null,
           h('span', { class: 'ico', text: w.icon }),
           h('span', { class: 'nm', text: w.name }),
-          owned ? null : h('span', { class: 'price', text: `🔒${w.price}` }),
+          owned ? null : h('span', { class: 'price', text: rank ? `🔒R${rank}` : `🔒${w.price}` }),
+          tier ? h('span', { class: 'tier', text: '★'.repeat(tier) }) : null,
         );
       }),
     );

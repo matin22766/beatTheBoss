@@ -917,3 +917,271 @@ video.cam {
     visibility: hidden;
   }
 }
+
+/* ---------- Progression: rank, level-up, results ---------- */
+.hud-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.wallet-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.promo-badge:empty {
+  display: none;
+}
+
+.promo-badge {
+  background: linear-gradient(180deg, #fff3a8, #ffcc33);
+  color: #5a3a00;
+  font-weight: 900;
+  border-radius: 999px;
+  padding: 4px 10px;
+  border: 2px solid #8a5d00;
+  font-size: 14px;
+}
+
+.rank-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 5px 10px 7px;
+  min-width: 190px;
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+}
+
+.rank-title {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.xp-bar {
+  position: relative;
+  height: 7px;
+  margin-top: 4px;
+  border-radius: 6px;
+  background: #2b2d38;
+  overflow: hidden;
+}
+
+.xp-bar.big {
+  height: 12px;
+  margin: 6px 0 10px;
+}
+
+.xp-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  transform: scaleX(0);
+  background: linear-gradient(90deg, #7f5af0, #bf5af2 60%, #ffcc33);
+  transition: transform 0.35s ease-out;
+}
+
+.results-card .xp-fill {
+  transition: none;
+}
+
+.level-up {
+  position: absolute;
+  top: 34%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  animation: bannerIn 2.5s ease-out forwards;
+}
+
+.level-up .lu-title {
+  font-size: 58px;
+  font-weight: 900;
+  color: var(--accent);
+  -webkit-text-stroke: 3px #000;
+  text-shadow: 0 6px 0 #000, 0 0 30px rgba(255, 204, 51, 0.6);
+  white-space: nowrap;
+}
+
+.level-up .lu-sub {
+  font-size: 24px;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 3px 0 #000;
+}
+
+.confetti {
+  position: absolute;
+  top: -20px;
+  width: 10px;
+  height: 16px;
+  border-radius: 2px;
+  animation: confetti 1.8s ease-in forwards;
+}
+
+@keyframes confetti {
+  0% {
+    transform: translateY(0) rotate(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(260px) rotate(540deg);
+    opacity: 0;
+  }
+}
+
+.results-card {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  width: 290px;
+  transform: translateY(-50%);
+  background: var(--panel-solid);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 14px 18px 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  animation: rcIn 0.4s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+.results-card.out {
+  transition: opacity 0.35s, transform 0.35s;
+  opacity: 0;
+  transform: translate(40px, -50%);
+}
+
+@keyframes rcIn {
+  from {
+    opacity: 0;
+    transform: translate(80px, -50%);
+  }
+}
+
+.rc-head {
+  font-size: 34px;
+  font-weight: 900;
+  color: var(--danger);
+  -webkit-text-stroke: 1.5px #000;
+  margin-bottom: 6px;
+}
+
+.rc-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.rc-num {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.rc-rank {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #bf5af2;
+}
+
+.rc-next {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.rc-goal {
+  margin-top: 6px;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+/* ---------- Shop: tiers, locks, career ---------- */
+.stars {
+  color: var(--accent);
+  letter-spacing: 1px;
+  font-size: 13px;
+}
+
+.card .upgrade {
+  margin-top: 6px;
+}
+
+.buy.locked {
+  background: #3a3d4a;
+  color: var(--muted);
+}
+
+.career {
+  display: grid;
+  gap: 14px;
+}
+
+.career .panel {
+  background: var(--panel-solid);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+
+.career h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.career .big-line {
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.career .stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  font-weight: 700;
+}
+
+.career .stat-grid b {
+  display: block;
+  font-size: 20px;
+  color: var(--accent);
+}
+
+.weapon .tier {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  font-size: 9px;
+  color: var(--accent);
+  letter-spacing: 0;
+}
+
+.career .buy {
+  margin-top: 10px;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 800;
+  font-size: 15px;
+  background: var(--accent);
+  color: #1b1500;
+}
+
+.career .buy.locked {
+  background: #3a3d4a;
+  color: var(--muted);
+  cursor: default;
+}
