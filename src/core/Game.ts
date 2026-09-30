@@ -22,6 +22,10 @@ import { Hud } from '../ui/Hud';
 import { audio } from '../audio/AudioEngine';
 import type { ThemeDef, ThemeInstance } from '../themes/Theme';
 import { office } from '../themes/office';
+import { THEMES, themeById } from '../themes';
+import { SaveStore, type Quality, type SaveData } from '../economy/Save';
+import { QualityManager } from './Quality';
+import type { GoreMode } from '../fx/Effects';
 import type { FaceProfile } from '../face/FaceProfile';
 import { saveProfile } from '../face/FaceProfile';
 import { roomPoint } from './roomPoint';
@@ -39,15 +43,20 @@ export class Game {
   readonly sync = new BodySync();
   readonly events = new EventBus<GameEvents>();
   readonly fx = new Effects();
-  readonly economy = new Economy();
+  readonly save = new SaveStore(
+    WEAPONS.filter((w) => w.price === 0).map((w) => w.id),
+    THEMES.filter((t) => t.price === 0).map((t) => t.id),
+  );
+  readonly economy = new Economy(this.save.data.coins);
+  readonly quality: QualityManager;
+  outlineEnabled = true;
   readonly hud: Hud;
   readonly grab: GrabController;
   readonly weapons: WeaponSystem;
   readonly viewModel: ViewModel;
   readonly weaponBar: WeaponBar;
   readonly deaths: DeathDirector;
-  /** Weapon ownership hook (the shop replaces this). */
-  isOwned: (def: WeaponDef) => boolean = () => true;
+  /** Called when the player picks a weapon they don't own yet (main wires this to the shop). */
   onLockedWeapon: (def: WeaponDef) => void = () => {};
   boss: Boss | null = null;
   themeDef: ThemeDef = office;
@@ -103,6 +112,10 @@ export class Game {
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.toneMappingExposure = 1.05;
     this.outline = new OutlineEffect(r, { defaultThickness: 0.0035, defaultColor: [0.06, 0.05, 0.07] });
+    const st = this.save.data.settings;
+    audio.setVolume(st.volume);
+    audio.setMuted(st.muted);
+    this.fx.gore = st.gore;
 
     this.rig = new CameraRig(window.innerWidth / window.innerHeight);
     this.physics = new PhysicsWorld();
@@ -112,7 +125,12 @@ export class Game {
     }
     this.scene.add(this.rig.camera);
     this.scene.add(this.fx.group);
-    this.setTheme(office);
+    this.quality = new QualityManager(this, st.quality, st.autoQuality, (q) => {
+      this.save.data.settings.quality = q;
+      this.save.save();
+      this.hud?.toast(`Graphics lowered to ${q} for smoother play`);
+    });
+    this.setTheme(themeById(this.save.data.theme), false);
 
     this.hud = new Hud(ui);
     this.grab = new GrabController(this.physics, () => this.boss);
@@ -130,7 +148,7 @@ export class Game {
       viewModel: (this.viewModel = new ViewModel(this.rig.camera)),
       now: () => this.time,
     };
-    this.weapons = new WeaponSystem(ctx, WEAPONS[0]);
+    this.weapons = new WeaponSystem(ctx, WEAPONS.find((w) => w.id === this.save.data.weapon) ?? WEAPONS[0]);
     this.weaponBar = new WeaponBar(ui, {
       weapons: WEAPONS,
       isOwned: (d) => this.isOwned(d),
@@ -146,6 +164,8 @@ export class Game {
       setCeiling: (on) => this.ceiling?.setEnabled(on),
     });
 
+    this.hud.setCoins(this.economy.coins, false);
+    this.selectWeapon(this.weapons.current, false);
     this.spawnBoss();
     this.wireEvents();
     this.bindInput();
@@ -155,7 +175,11 @@ export class Game {
 
   // ---------------------------------------------------------------- world
 
-  setTheme(def: ThemeDef): void {
+  isOwned(def: WeaponDef): boolean {
+    return this.save.data.ownedWeapons.includes(def.id);
+  }
+
+  setTheme(def: ThemeDef, persist = true): void {
     if (this.theme) {
       this.scene.remove(this.theme.group);
       this.theme.group.traverse((o) => {
@@ -176,6 +200,7 @@ export class Game {
     this.scene.background = inst.background;
     this.scene.fog = inst.fog ?? null;
     this.physics.setGravity(def.gravity ?? -9.81);
+    this.fx.setGravityScale(-(def.gravity ?? -9.81) / 9.81);
 
     // Static colliders for big props.
     const body = (this.themeBody = this.physics.world.createRigidBody(RAPIER.RigidBodyDesc.fixed()));
@@ -189,6 +214,74 @@ export class Game {
       this.surfaces.set(c.handle, 'prop');
     }
     this.fx.clearSplats();
+    this.quality?.refreshShadowMaps();
+    audio.setAmbience(def.id);
+    if (persist) {
+      this.save.data.theme = def.id;
+      this.save.save();
+      if (this.boss) this.spawnBoss();
+    }
+  }
+
+  // ---------------------------------------------------------------- settings
+
+  data(): SaveData {
+    return this.save.data;
+  }
+
+  setGore(g: GoreMode): void {
+    this.fx.gore = g;
+    this.save.data.settings.gore = g;
+    this.save.save();
+  }
+
+  setQuality(q: Quality, auto: boolean): void {
+    this.quality.auto = auto;
+    this.quality.apply(q);
+    this.save.data.settings.quality = q;
+    this.save.data.settings.autoQuality = auto;
+    this.save.save();
+  }
+
+  setVolume(v: number): void {
+    audio.setVolume(v);
+    this.save.data.settings.volume = v;
+    this.save.save();
+  }
+
+  setMuted(m: boolean): void {
+    audio.setMuted(m);
+    this.save.data.settings.muted = m;
+    this.save.save();
+  }
+
+  /** Spend coins (shop). */
+  spend(price: number): boolean {
+    if (!this.economy.spend(price)) return false;
+    this.save.data.coins = this.economy.coins;
+    this.save.flush();
+    this.hud.setCoins(this.economy.coins);
+    return true;
+  }
+
+  unlockWeapon(id: string): void {
+    if (!this.save.data.ownedWeapons.includes(id)) this.save.data.ownedWeapons.push(id);
+    this.save.flush();
+    this.weaponBar.render();
+  }
+
+  unlockTheme(id: string): void {
+    if (!this.save.data.ownedThemes.includes(id)) this.save.data.ownedThemes.push(id);
+    this.save.flush();
+  }
+
+  resetProgress(): void {
+    this.save.reset();
+    this.economy.coins = 0;
+    this.hud.setCoins(0, false);
+    this.selectWeapon(WEAPONS[0], false);
+    this.setTheme(themeById(this.save.data.theme));
+    this.weaponBar.render();
   }
 
   spawnBoss(): void {
@@ -237,6 +330,12 @@ export class Game {
   private wireEvents(): void {
     this.events.on('hit', ({ hit, result }) => {
       const earned = this.economy.onHit(result, this.time);
+      const stats = this.save.data.stats;
+      stats.hits++;
+      stats.severs += result.severed.length;
+      stats.bestCombo = Math.max(stats.bestCombo, this.economy.combo);
+      this.save.data.coins = this.economy.coins;
+      this.save.save();
       if (earned > 0) {
         this.hud.setCoins(this.economy.coins);
         const s = this.toScreen(hit.point);
@@ -250,6 +349,9 @@ export class Game {
       if (!this.boss) return;
       this.grab.release();
       this.hud.setHp(0, true);
+      this.save.data.stats.kills++;
+      this.save.save();
+      if (this.themeDef.id === 'ring') audio.play('cheer', { intensity: 0.8 });
       this.respawnT = this.deaths.play(style, this.boss, cause);
     });
   }
@@ -307,7 +409,9 @@ export class Game {
       this.respawnT -= realDt;
       if (this.respawnT <= 0) this.spawnBoss();
     }
-    this.outline.render(this.scene, this.rig.camera);
+    this.quality.sample(realDt);
+    if (this.outlineEnabled) this.outline.render(this.scene, this.rig.camera);
+    else this.renderer.render(this.scene, this.rig.camera);
   }
 
   private fixedStep(dt: number): void {
@@ -505,7 +609,7 @@ export class Game {
     return true;
   }
 
-  selectWeapon(def: WeaponDef): void {
+  selectWeapon(def: WeaponDef, sound = true): void {
     if (!this.isOwned(def)) {
       this.onLockedWeapon(def);
       return;
@@ -513,7 +617,9 @@ export class Game {
     this.weapons.select(def);
     this.weaponBar.setActive(def.id);
     this.canvas.classList.toggle('aiming', usesViewModel(def));
-    audio.play('click', { intensity: 0.4 });
+    this.save.data.weapon = def.id;
+    this.save.save();
+    if (sound) audio.play('click', { intensity: 0.4 });
   }
 
   selectWeaponIndex(i: number): void {

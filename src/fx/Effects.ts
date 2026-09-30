@@ -211,6 +211,10 @@ export class Effects {
     }
   }
 
+  setGravityScale(k: number): void {
+    for (const p of [this.sparks, this.dust, this.blood, this.debris, this.smoke, this.fire, this.ice]) p.gravityScale = k;
+  }
+
   bloodColor(): number {
     if (this.gore === 'off') return 0xffffff;
     const list = BLOOD[this.gore];

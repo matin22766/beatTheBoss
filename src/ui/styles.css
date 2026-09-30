@@ -328,7 +328,7 @@ button {
 
 .weapon .price {
   position: absolute;
-  bottom: 3px;
+  top: 3px;
   right: 5px;
   font-size: 10px;
   font-weight: 800;
@@ -812,4 +812,62 @@ video.cam {
   .fl-steps {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+/* ---------- Shop & settings ---------- */
+.shop-modal {
+  width: min(900px, calc(100vw - 32px));
+}
+
+.shop-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  position: sticky;
+  top: -22px;
+  background: var(--panel-solid);
+  padding: 6px 0;
+  z-index: 1;
+}
+
+.shop-coins {
+  font-weight: 900;
+  font-size: 20px;
+  color: var(--accent);
+}
+
+.shop-cat {
+  margin: 18px 0 8px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.swatch-lg {
+  height: 70px;
+  border-radius: 10px;
+}
+
+.controls-help {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.controls-help h3 {
+  color: var(--text);
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.controls-help b {
+  color: var(--text);
+}
+
+.meta {
+  color: var(--muted);
+  font-size: 13px;
 }

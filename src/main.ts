@@ -1,9 +1,6 @@
 import './ui/styles.css';
-import { Game } from './core/Game';
 import { audio } from './audio/AudioEngine';
 import { h } from './ui/dom';
-import { FaceModal } from './ui/FaceModal';
-import { loadProfile } from './face/FaceProfile';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const ui = document.getElementById('ui') as HTMLElement;
@@ -23,10 +20,18 @@ const overlay = h(
   ),
 );
 ui.append(overlay);
-bar.style.width = '30%';
 
-Game.create(canvas, ui)
-  .then((game) => {
+// The engine (three.js + Rapier WASM) is a few MB: show the title screen first, then stream it in.
+let fake = 5;
+const tick = setInterval(() => {
+  fake = Math.min(90, fake + (90 - fake) * 0.08);
+  bar.style.width = `${fake}%`;
+}, 100);
+
+import('./app')
+  .then(({ startApp }) => startApp(canvas, ui))
+  .then(() => {
+    clearInterval(tick);
     bar.style.width = '100%';
     startBtn.disabled = false;
     startBtn.textContent = 'Start smashing';
@@ -35,28 +40,9 @@ Game.create(canvas, ui)
       audio.play('boing', { intensity: 0.5 });
       overlay.remove();
     });
-    const faceModal = new FaceModal(ui, game);
-    game.hud.setSideActions([
-      { id: 'face', icon: '📷', label: 'Boss face', onClick: () => faceModal.open() },
-      { id: 'respawn', icon: '🔄', label: 'New boss (R)', onClick: () => game.spawnBoss() },
-      {
-        id: 'sound',
-        icon: '🔊',
-        label: 'Sound on/off',
-        onClick: () => {
-          audio.setMuted(!audio.muted);
-          document.querySelector('[data-id="sound"]')!.textContent = audio.muted ? '🔇' : '🔊';
-        },
-      },
-    ]);
-    // Restore a previously uploaded face.
-    void loadProfile().then((p) => p && game.applyFace(p, false));
-    const params = new URLSearchParams(location.search);
-    if (import.meta.env.DEV || params.has('debug')) {
-      Object.assign(window, { __game: game, __faceModal: faceModal });
-    }
   })
   .catch((err: unknown) => {
+    clearInterval(tick);
     console.error(err);
     startBtn.textContent = 'Failed to start: WebGL/WASM unavailable';
   });

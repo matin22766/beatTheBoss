@@ -58,7 +58,8 @@ export function cyl(rt: number, rb: number, h: number, mat: THREE.Material, x = 
 
 export interface RoomMaterials {
   floor: THREE.Material;
-  wall: THREE.Material;
+  /** null = no visible side walls (open-air arenas). */
+  wall: THREE.Material | null;
   back?: THREE.Material;
   ceiling?: THREE.Material;
   trim?: THREE.Material;
@@ -78,13 +79,16 @@ export function buildRoom(mats: RoomMaterials): THREE.Group {
   floor.name = 'floor';
   g.add(floor);
 
-  const backWall = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2, h), mats.back ?? mats.wall);
-  backWall.position.set(0, h / 2, back);
-  backWall.receiveShadow = true;
-  g.add(backWall);
+  const backMat = mats.back ?? mats.wall;
+  if (backMat) {
+    const backWall = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2, h), backMat);
+    backWall.position.set(0, h / 2, back);
+    backWall.receiveShadow = true;
+    g.add(backWall);
+  }
 
-  for (const s of [-1, 1]) {
-    const wall = new THREE.Mesh(new THREE.PlaneGeometry(depth, h), mats.wall);
+  if (mats.wall) for (const s of [-1, 1]) {
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(depth, h), mats.wall!);
     wall.rotation.y = (-s * Math.PI) / 2;
     wall.position.set(s * hw, h / 2, midZ);
     wall.receiveShadow = true;

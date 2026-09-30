@@ -5,7 +5,7 @@ import { mkdirSync, existsSync } from 'node:fs';
 
 const url = process.argv[2] ?? 'http://localhost:5173/?debug';
 // SMOKE=basic,weapons,deaths (default: all). The software renderer is slow, so run sections separately.
-const sections = new Set((process.env.SMOKE ?? 'basic,weapons,deaths,face').split(','));
+const sections = new Set((process.env.SMOKE ?? 'basic,weapons,deaths,face,shop,themes').split(','));
 const out = 'smoke-out';
 mkdirSync(out, { recursive: true });
 const exe = ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome', '/opt/pw-browsers/chromium'].find((p) => existsSync(p));
@@ -83,6 +83,12 @@ await shot('04-thrown');
 
 // ---- Every weapon: select, aim at the chest, fire/hold, check it did something ----
 if (sections.has('weapons')) {
+// Unlock everything for the test run.
+await page.evaluate(() => {
+  const g = window.__game;
+  g.save.data.ownedWeapons = g.weaponBar.visible().map((w) => w.id);
+  g.weaponBar.render();
+});
 const only = process.env.WEAPONS ? process.env.WEAPONS.split(',') : null;
 const weaponIds = (await page.evaluate(() => window.__game.weaponBar.visible().map((w) => w.id))).filter((id) => !only || only.includes(id));
 const results = {};
@@ -108,6 +114,49 @@ for (const id of weaponIds) {
 console.log('weapon damage', JSON.stringify(results));
 const dud = Object.entries(results).filter(([, d]) => d <= 0).map(([k]) => k);
 if (dud.length) errors.push('weapons dealt no damage: ' + dud.join(', '));
+}
+
+// ---- Shop: buy a weapon with coins ----
+if (sections.has('shop')) {
+  await page.evaluate(() => {
+    const g = window.__game;
+    g.economy.coins = 5000;
+    g.hud.setCoins(5000, false);
+    window.__shop.open('weapons', 'katana');
+  });
+  await wait(500);
+  await page.click('[data-item="katana"] .buy');
+  await wait(500);
+  await shot('s-shop');
+  const r = await page.evaluate(() => ({ owned: window.__game.isOwned({ id: 'katana' }), coins: window.__game.economy.coins, weapon: window.__game.weapons.current.id }));
+  if (!r.owned || r.coins !== 4500 || r.weapon !== 'katana') errors.push('shop purchase failed: ' + JSON.stringify(r));
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.__shop.open('arenas'));
+  await wait(400);
+  await shot('s-arenas');
+  await page.keyboard.press('Escape');
+}
+
+// ---- Every arena ----
+if (sections.has('themes')) {
+  const ids = await page.evaluate(() => {
+    const g = window.__game;
+    return ['office', 'warehouse', 'ring', 'kitchen', 'rooftop', 'lab', 'beach', 'space'].filter((id) => {
+      g.unlockTheme(id);
+      return true;
+    });
+  });
+  for (const id of ids) {
+    await page.evaluate((tid) => {
+      const g = window.__game;
+      g.setTheme(window.__themes.find((t) => t.id === tid));
+    }, id);
+    await waitGame(1.2);
+    const p = await partXY('head');
+    await page.mouse.click(p.x, p.y);
+    await waitGame(0.4);
+    await shot(`t-${id}`);
+  }
 }
 
 // ---- Every death style ----

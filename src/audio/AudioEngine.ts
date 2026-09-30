@@ -30,7 +30,26 @@ export type SoundName =
   | 'squeak'
   | 'glass'
   | 'twinkle'
-  | 'thunk';
+  | 'thunk'
+  | 'cheer'
+  | 'kaching';
+
+interface AmbiencePreset {
+  noise?: { type: BiquadFilterType; freq: number; q: number; level: number; lfoRate?: number; lfoDepth?: number };
+  drones?: Array<[number, number]>;
+}
+
+/** Quiet background beds per arena. */
+export const AMBIENCE: Record<string, AmbiencePreset> = {
+  office: { noise: { type: 'lowpass', freq: 380, q: 0.7, level: 0.035 }, drones: [[60, 0.012]] },
+  warehouse: { noise: { type: 'lowpass', freq: 220, q: 0.7, level: 0.05 }, drones: [[45, 0.02]] },
+  ring: { noise: { type: 'bandpass', freq: 900, q: 0.6, level: 0.09, lfoRate: 0.25, lfoDepth: 0.5 } },
+  kitchen: { drones: [[120, 0.012], [240, 0.006]], noise: { type: 'lowpass', freq: 300, q: 0.7, level: 0.02 } },
+  rooftop: { noise: { type: 'bandpass', freq: 520, q: 0.9, level: 0.07, lfoRate: 0.11, lfoDepth: 0.7 }, drones: [[38, 0.015]] },
+  lab: { drones: [[90, 0.012], [3100, 0.0025]], noise: { type: 'lowpass', freq: 500, q: 0.7, level: 0.02 } },
+  beach: { noise: { type: 'lowpass', freq: 750, q: 0.5, level: 0.13, lfoRate: 0.12, lfoDepth: 0.85 } },
+  space: { drones: [[55, 0.02], [82.5, 0.012]], noise: { type: 'lowpass', freq: 260, q: 0.7, level: 0.025 } },
+};
 
 export type LoopName = 'chainsaw' | 'flame' | 'electric' | 'freezeRay';
 
@@ -50,6 +69,8 @@ export class AudioEngine {
   private reverbSend!: GainNode;
   private noiseBuf!: AudioBuffer;
   private voices = 0;
+  private ambienceStop: (() => void) | null = null;
+  private ambienceName: string | null = null;
   private lastPlayed = new Map<string, number>();
   volume = 0.8;
   muted = false;
@@ -84,6 +105,7 @@ export class AudioEngine {
     this.noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = this.noiseBuf.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    if (this.ambienceName) this.setAmbience(this.ambienceName);
   }
 
   get ready(): boolean {
@@ -367,11 +389,78 @@ export class AudioEngine {
       case 'twinkle':
         [1568, 2093, 2637, 3136].forEach((f, i) => this.tone(out, t + i * 0.07, 0.3, 'sine', f, f, 0.2, 0.002));
         break;
+      case 'cheer':
+        this.noise(out, t, 2.2, 'bandpass', 1100 * p, 1500, 0.6, 0.9, 0.25);
+        for (let i = 0; i < 5; i++) this.voice(out, t + Math.random() * 0.4, rand(0.5, 0.9), rand(260, 420), rand(300, 500), [800, 900], [1300, 1500], 12);
+        break;
+      case 'kaching':
+        this.noise(out, t, 0.08, 'highpass', 5000, 4000, 0.7, 0.8, 0.001);
+        [2093, 2637, 3136].forEach((f, i) => this.tone(out, t + 0.05 + i * 0.05, 0.6, 'triangle', f, f, 0.18, 0.002));
+        break;
       case 'thunk':
         this.tone(out, t, 0.12, 'triangle', 200 * p, 90, 0.8);
         this.noise(out, t, 0.05, 'bandpass', 1500 * p, 600, 2, 0.6);
         break;
     }
+  }
+
+  /** Crossfade to an arena's background bed (null = silence). Safe to call before unlock. */
+  setAmbience(name: string | null): void {
+    this.ambienceName = name;
+    const ctx = this.ctx;
+    if (!ctx) return;
+    this.ambienceStop?.();
+    this.ambienceStop = null;
+    const preset = name ? AMBIENCE[name] : null;
+    if (!preset) return;
+    const out = ctx.createGain();
+    out.gain.value = 0.0001;
+    out.connect(this.sfx);
+    const t = ctx.currentTime;
+    out.gain.exponentialRampToValueAtTime(1, t + 1.5);
+    const nodes: AudioScheduledSourceNode[] = [];
+    if (preset.noise) {
+      const n = preset.noise;
+      const src = ctx.createBufferSource();
+      src.buffer = this.noiseBuf;
+      src.loop = true;
+      const f = ctx.createBiquadFilter();
+      f.type = n.type;
+      f.frequency.value = n.freq;
+      f.Q.value = n.q;
+      const g = ctx.createGain();
+      g.gain.value = n.level;
+      if (n.lfoRate) {
+        const lfo = ctx.createOscillator();
+        lfo.frequency.value = n.lfoRate;
+        const lg = ctx.createGain();
+        lg.gain.value = n.level * (n.lfoDepth ?? 0.5);
+        lfo.connect(lg);
+        lg.connect(g.gain);
+        nodes.push(lfo);
+      }
+      src.connect(f);
+      f.connect(g);
+      g.connect(out);
+      nodes.push(src);
+    }
+    for (const [freq, level] of preset.drones ?? []) {
+      const o = ctx.createOscillator();
+      o.frequency.value = freq;
+      const g = ctx.createGain();
+      g.gain.value = level;
+      o.connect(g);
+      g.connect(out);
+      nodes.push(o);
+    }
+    nodes.forEach((n) => n.start());
+    this.ambienceStop = () => {
+      const now = ctx.currentTime;
+      out.gain.cancelScheduledValues(now);
+      out.gain.setValueAtTime(Math.max(0.0001, out.gain.value), now);
+      out.gain.exponentialRampToValueAtTime(0.0001, now + 0.8);
+      nodes.forEach((n) => n.stop(now + 0.9));
+    };
   }
 
   /** Sustained sound for hold-to-use weapons. Returns a stop function. */

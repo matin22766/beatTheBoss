@@ -51,6 +51,8 @@ export class ParticlePool {
   private colors: THREE.Color[];
   private next = 0;
   private active = 0;
+  /** World gravity relative to Earth (space arena). */
+  gravityScale = 1;
 
   constructor(private readonly opts: ParticleOptions) {
     const n = (this.n = opts.count);
@@ -131,7 +133,7 @@ export class ParticlePool {
       }
       const d = Math.max(0, 1 - this.drag[i] * dt);
       vel[o] *= d;
-      vel[o + 1] = vel[o + 1] * d - this.grav[i] * dt;
+      vel[o + 1] = vel[o + 1] * d - this.grav[i] * (this.grav[i] > 0 ? this.gravityScale : 1) * dt;
       vel[o + 2] *= d;
       pos[o] += vel[o] * dt;
       pos[o + 1] += vel[o + 1] * dt;
