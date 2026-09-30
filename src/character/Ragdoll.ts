@@ -30,7 +30,11 @@ const UPRIGHT_KP = 380;
 const UPRIGHT_KD = 34;
 const MAX_ALPHA = 900;
 const STAND_HEIGHT = 0.995;
-const ARENA_SOFT_BOUND = { x: 3.6, zMin: -2.2, zMax: 2.2 };
+const ARENA_SOFT_BOUND = { x: 3.8, zMin: -2.2, zMax: 2.4 };
+/** A part this close to the floor counts as touching it. */
+const GROUND_EPS = 0.14;
+const WALK_SPEED = 0.95;
+const STRIDE = 0.55;
 
 const _q1 = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
@@ -102,7 +106,22 @@ export class Ragdoll implements DamageTarget {
   dead = false;
   grabbed = false;
   faceYaw = 0;
+  /** When set, overrides faceYaw (activities turn him toward things). */
+  lookYaw: number | null = null;
   readonly home = new THREE.Vector3();
+  /** Where he is walking to, if anywhere. */
+  walkTarget: THREE.Vector3 | null = null;
+  walkSpeed = WALK_SPEED;
+  /** Lowers the standing height (ducking, sitting). */
+  heightOffset = 0;
+  /** Gait phase in radians (advances with distance travelled, not time). */
+  walkPhase = 0;
+  /** Footstep callback (sound). */
+  onStep: (() => void) | null = null;
+  /** Rising support height while getting up (no instant levitation). */
+  private supportY = STAND_HEIGHT;
+  private gettingUp = false;
+  private airTime = 0;
 
   private time = 0;
   private recoverDelay = 0;
@@ -213,12 +232,52 @@ export class Ragdoll implements DamageTarget {
     if (this.dead) return;
     this.strength = Math.max(0, this.strength - amount);
     this.recoverDelay = Math.max(this.recoverDelay, 0.25 + amount * 1.2);
+    if (amount > 0.25) this.walkTarget = null;
   }
 
   kill(): void {
     this.dead = true;
     this.strength = 0;
     for (const p of this.parts.values()) p.body.setAngularDamping(1.2);
+  }
+
+  /** Walk to a point on the floor. */
+  walkTo(x: number, z: number, speed = WALK_SPEED): void {
+    this.walkTarget = new THREE.Vector3(
+      THREE.MathUtils.clamp(x, -ARENA_SOFT_BOUND.x, ARENA_SOFT_BOUND.x),
+      0,
+      THREE.MathUtils.clamp(z, ARENA_SOFT_BOUND.zMin, ARENA_SOFT_BOUND.zMax),
+    );
+    this.walkSpeed = speed;
+  }
+
+  get walking(): boolean {
+    return this.walkTarget !== null;
+  }
+
+  get isGettingUp(): boolean {
+    return this.gettingUp;
+  }
+
+  /** World-space height of a part's lowest point, from its shape and current rotation. */
+  lowestPoint(p: PartRuntime): number {
+    const t = p.body.translation();
+    const q = toQuat(p.body.rotation(), _q3);
+    const s = p.def.shape;
+    const axisY = (x: number, y: number, z: number) => Math.abs(_v3.set(x, y, z).applyQuaternion(q).y);
+    let ext: number;
+    if (s.kind === 'ball') ext = s.radius;
+    else if (s.kind === 'capsule') ext = axisY(0, 1, 0) * s.halfHeight + s.radius;
+    else ext = axisY(1, 0, 0) * s.hx + axisY(0, 1, 0) * s.hy + axisY(0, 0, 1) * s.hz;
+    return t.y - ext;
+  }
+
+  /** Is any attached part touching (or nearly touching) the floor? */
+  grounded(): boolean {
+    for (const p of this.parts.values()) {
+      if (p.attached && this.lowestPoint(p) - this.home.y < GROUND_EPS - 0.06) return true;
+    }
+    return false;
   }
 
   isStanding(): boolean {
@@ -328,12 +387,21 @@ export class Ragdoll implements DamageTarget {
     // --- Pose selection & blend ---
     if (this.poseTimer > 0) this.poseTimer -= dt;
     else if (!dead) {
-      const desired: PoseName = this.grabbed ? 'flail' : this.strength < 0.45 ? 'dizzy' : 'idle';
-      this.setPose(desired, 0.3);
+      const desired: PoseName = this.grabbed
+        ? 'flail'
+        : this.gettingUp
+          ? 'getup'
+          : this.strength < 0.45
+            ? 'dizzy'
+            : this.walkTarget
+              ? 'walk'
+              : 'idle';
+      this.setPose(desired, desired === 'walk' ? 0.2 : 0.3);
     }
     this.poseBlend = Math.min(1, this.poseBlend + dt * this.poseBlendRate);
-    const poseA = POSES[this.prevPose](this.time);
-    const poseB = POSES[this.pose](this.time);
+    const clock = (p: PoseName) => (p === 'walk' ? this.walkPhase : p === 'getup' ? (this.supportY - 0.2) / (STAND_HEIGHT - 0.2) : this.time);
+    const poseA = POSES[this.prevPose](clock(this.prevPose));
+    const poseB = POSES[this.pose](clock(this.pose));
 
     const s = dead ? 0 : this.strength;
     const gain = s * s;
@@ -389,7 +457,8 @@ export class Ragdoll implements DamageTarget {
     const pelvis = this.get('pelvis');
     const pbody = pelvis.body;
     const q = toQuat(pbody.rotation(), _q1);
-    const qUp = _q2.setFromAxisAngle(_v1.set(0, 1, 0), this.faceYaw);
+    const yaw = this.walkTarget ? this.headingYaw() : (this.lookYaw ?? this.faceYaw);
+    const qUp = _q2.setFromAxisAngle(_v1.set(0, 1, 0), yaw);
     const err = quatToRotVec(qUp.multiply(q.clone().invert()), new THREE.Vector3());
     const w = pbody.angvel();
     const upAlpha = err.multiplyScalar(UPRIGHT_KP * gain).sub(_v2.set(w.x, w.y, w.z).multiplyScalar(UPRIGHT_KD * Math.sqrt(gain)));
@@ -399,31 +468,75 @@ export class Ragdoll implements DamageTarget {
     const legs = this.intactLegs();
     const t = pbody.translation();
     const v = pbody.linvel();
-    const targetY = this.home.y + STAND_HEIGHT;
+    const standY = this.home.y + STAND_HEIGHT;
     const m = this.totalAttachedMass();
     const g = -this.physics.world.gravity.y;
+    // No cheating in mid-air: all support needs something touching the floor.
+    this.airTime = this.grounded() ? 0 : this.airTime + dt;
+    if (this.airTime > 0.15) {
+      this.walkTarget = null;
+      return;
+    }
 
-    // "Muscle tone": cancel most of gravity on every attached part so the pose motors only have to
-    // pose, not lift. Without working legs the boss can't hold himself up, so he mostly slumps.
-    const comp = gain * (legs > 0 ? 0.92 : 0.25) * g * dt;
+    // Knocked down: rise gradually through a get-up pose instead of levitating straight up.
+    const height = t.y - this.home.y;
+    if (height < STAND_HEIGHT - 0.3 && !this.gettingUp && legs > 0) {
+      this.gettingUp = true;
+      this.supportY = Math.max(0.15, height);
+      this.walkTarget = null;
+    }
+    if (this.gettingUp) {
+      if (gain > 0.35) this.supportY = Math.min(STAND_HEIGHT, this.supportY + dt * 0.75 * gain);
+      if (this.supportY >= STAND_HEIGHT && height > STAND_HEIGHT - 0.08) this.gettingUp = false;
+    } else {
+      this.supportY = STAND_HEIGHT;
+    }
+    const targetY = this.home.y + this.supportY + (this.gettingUp ? 0 : this.heightOffset);
+
+    // "Muscle tone": cancel part of gravity so the pose motors only have to pose. His weight still
+    // sits on his feet. Without working legs he can't hold himself up, so he mostly slumps.
+    const comp = gain * (legs > 0 ? 0.7 : 0.2) * g * dt;
     for (const p of this.parts.values()) {
       if (p.attached) p.body.applyImpulse({ x: 0, y: p.def.mass * comp, z: 0 }, true);
     }
-    // Height spring on the pelvis carries the remaining weight and gets him back on his feet.
+    // Height spring on the pelvis carries the remaining weight.
     if (legs > 0 && t.y < targetY + 0.06) {
-      const accel = Math.min(g + 16, Math.max(0, 0.08 * g + 60 * (targetY - t.y) - 9 * v.y));
+      const accel = Math.min(g + 12, Math.max(0, 0.3 * g + 60 * (targetY - t.y) - 10 * v.y));
       const support = gain * (legs / 2) * m * accel;
       pbody.applyImpulse({ x: 0, y: support * dt, z: 0 }, true);
     }
-    // Plant horizontally while standing and walk back inside the arena if near a wall.
-    if (legs === 2 && t.y > targetY - 0.35) {
-      let fx = -v.x * 5;
-      let fz = -v.z * 5;
-      if (Math.abs(t.x) > ARENA_SOFT_BOUND.x) fx += -Math.sign(t.x) * 3;
-      if (t.z < ARENA_SOFT_BOUND.zMin) fz += 3;
-      if (t.z > ARENA_SOFT_BOUND.zMax) fz -= 3;
-      pbody.applyImpulse({ x: fx * m * gain * dt, y: 0, z: fz * m * gain * dt }, true);
+
+    // Horizontal: plant while standing, or walk toward a target with a stepping gait.
+    if (legs === 2 && t.y > standY - 0.3 && !this.gettingUp) {
+      if (!this.walkTarget && (Math.abs(t.x) > ARENA_SOFT_BOUND.x || t.z < ARENA_SOFT_BOUND.zMin || t.z > ARENA_SOFT_BOUND.zMax)) {
+        this.walkTo(t.x * 0.7, t.z * 0.7);
+      }
+      let dvx = -v.x;
+      let dvz = -v.z;
+      if (this.walkTarget) {
+        const dx = this.walkTarget.x - t.x;
+        const dz = this.walkTarget.z - t.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist < 0.12) this.walkTarget = null;
+        else {
+          const sp = this.walkSpeed * Math.min(1, dist / 0.4);
+          dvx = (dx / dist) * sp - v.x;
+          dvz = (dz / dist) * sp - v.z;
+          // Advance the gait with distance travelled so the legs match the ground speed.
+          const before = Math.floor(this.walkPhase / Math.PI);
+          this.walkPhase += (Math.hypot(v.x, v.z) * dt * Math.PI) / STRIDE;
+          if (Math.floor(this.walkPhase / Math.PI) !== before) this.onStep?.();
+        }
+      }
+      const k = 5 * m * gain * dt;
+      pbody.applyImpulse({ x: dvx * k, y: 0, z: dvz * k }, true);
     }
+  }
+
+  private headingYaw(): number {
+    const t = this.get('pelvis').body.translation();
+    const w = this.walkTarget!;
+    return Math.atan2(w.x - t.x, w.z - t.z);
   }
 
   private intactLegs(): number {

@@ -32,7 +32,10 @@ export type SoundName =
   | 'twinkle'
   | 'thunk'
   | 'cheer'
-  | 'kaching';
+  | 'kaching'
+  | 'slowIn'
+  | 'slowOut'
+  | 'step';
 
 interface AmbiencePreset {
   noise?: { type: BiquadFilterType; freq: number; q: number; level: number; lfoRate?: number; lfoDepth?: number };
@@ -70,6 +73,8 @@ export class AudioEngine {
   private noiseBuf!: AudioBuffer;
   private voices = 0;
   private ambienceStop: (() => void) | null = null;
+  private slowFilter!: BiquadFilterNode;
+  private timeScale = 1;
   private ambienceName: string | null = null;
   private lastPlayed = new Map<string, number>();
   volume = 0.8;
@@ -90,7 +95,12 @@ export class AudioEngine {
     this.master = ctx.createGain();
     this.master.gain.value = this.muted ? 0 : this.volume;
     this.sfx = ctx.createGain();
-    this.sfx.connect(comp);
+    // Bullet time muffles everything through this low-pass.
+    this.slowFilter = ctx.createBiquadFilter();
+    this.slowFilter.type = 'lowpass';
+    this.slowFilter.frequency.value = 20000;
+    this.sfx.connect(this.slowFilter);
+    this.slowFilter.connect(comp);
     comp.connect(this.master);
     this.master.connect(ctx.destination);
 
@@ -120,6 +130,13 @@ export class AudioEngine {
   setMuted(m: boolean): void {
     this.muted = m;
     this.setVolume(this.volume);
+  }
+
+  /** Slow motion: lower pitch of new sounds and muffle the mix. */
+  setTimeScale(k: number): void {
+    if (Math.abs(k - this.timeScale) < 0.005) return;
+    this.timeScale = k;
+    if (this.ctx) this.slowFilter.frequency.setTargetAtTime(k >= 0.99 ? 20000 : 700 + 4000 * k, this.ctx.currentTime, 0.05);
   }
 
   setReverb(amount: number): void {
@@ -248,7 +265,7 @@ export class AudioEngine {
     setTimeout(() => this.voices--, 1200);
 
     const k = Math.max(0.05, Math.min(1.5, opts.intensity ?? 0.7));
-    const p = (opts.pitch ?? 1) * rand(0.92, 1.08);
+    const p = (opts.pitch ?? 1) * rand(0.92, 1.08) * (0.55 + 0.45 * this.timeScale);
     const t = now + 0.005;
     const out = this.bus(0.3 + k * 0.7, opts.pan ?? 0);
 
@@ -396,6 +413,18 @@ export class AudioEngine {
       case 'kaching':
         this.noise(out, t, 0.08, 'highpass', 5000, 4000, 0.7, 0.8, 0.001);
         [2093, 2637, 3136].forEach((f, i) => this.tone(out, t + 0.05 + i * 0.05, 0.6, 'triangle', f, f, 0.18, 0.002));
+        break;
+      case 'slowIn':
+        this.tone(out, t, 0.6, 'sine', 420, 60, 0.9, 0.01);
+        this.noise(out, t, 0.6, 'lowpass', 3000, 200, 0.7, 0.5, 0.02);
+        break;
+      case 'slowOut':
+        this.tone(out, t, 0.4, 'sine', 70, 380, 0.7, 0.01);
+        this.noise(out, t, 0.35, 'bandpass', 300, 2500, 0.8, 0.4, 0.02);
+        break;
+      case 'step':
+        this.tone(out, t, 0.07, 'sine', 110 * p, 55, 0.5);
+        this.noise(out, t, 0.05, 'lowpass', 900 * p, 300, 0.7, 0.35);
         break;
       case 'thunk':
         this.tone(out, t, 0.12, 'triangle', 200 * p, 90, 0.8);

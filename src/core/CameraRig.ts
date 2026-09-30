@@ -1,4 +1,24 @@
 import * as THREE from 'three';
+import { ROOM } from '../physics/ArenaColliders';
+
+const INSET = 0.3;
+
+/**
+ * Largest t in (0, 1] such that from + (to - from) * t stays inside the room box: a camera boom
+ * that pulls in instead of poking through walls.
+ */
+export function clipToRoom(from: THREE.Vector3, to: THREE.Vector3): number {
+  const min = [-ROOM.halfWidth + INSET, INSET, ROOM.back + INSET];
+  const max = [ROOM.halfWidth - INSET, ROOM.height - INSET, ROOM.visualFront - INSET];
+  const o = [from.x, from.y, from.z];
+  const d = [to.x - from.x, to.y - from.y, to.z - from.z];
+  let t = 1;
+  for (let a = 0; a < 3; a++) {
+    if (d[a] > 1e-9) t = Math.min(t, (max[a] - o[a]) / d[a]);
+    else if (d[a] < -1e-9) t = Math.min(t, (min[a] - o[a]) / d[a]);
+  }
+  return Math.max(0.05, t);
+}
 
 /** Damped orbit camera with trauma-based screen shake and a focus mode for finishers. */
 export class CameraRig {
@@ -74,6 +94,8 @@ export class CameraRig {
       this.curTarget.y + radius * Math.cos(polar),
       this.curTarget.z + radius * Math.sin(polar) * Math.cos(azimuth),
     );
+    const t = clipToRoom(this.curTarget, c.position);
+    if (t < 1) c.position.lerpVectors(this.curTarget, c.position, t * 0.98);
     c.lookAt(this.curTarget);
     if (shake > 0) {
       const t = this.time * 40;

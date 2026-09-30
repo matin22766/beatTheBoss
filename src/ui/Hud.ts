@@ -21,6 +21,7 @@ export class Hud {
   private popups: HTMLElement;
   readonly side: HTMLElement;
   readonly bottom: HTMLElement;
+  private bulletTime: HTMLElement;
   private displayedCoins = 0;
   private targetCoins = 0;
 
@@ -35,10 +36,12 @@ export class Hud {
     this.comboEl = h('div', { class: 'combo' });
     this.popups = h('div', { class: 'popups' });
     this.side = h('div', { class: 'side' });
+    this.bulletTime = h('div', { class: 'bullet-time' }, h('div', { class: 'bt-label', text: 'SLOW-MO' }));
     this.bottom = h('div');
     this.root = h(
       'div',
       { class: 'hud' },
+      this.bulletTime,
       this.popups,
       h(
         'div',
@@ -53,6 +56,7 @@ export class Hud {
         { class: 'hint' },
         h('div', { html: '<b>Click</b> hit · <b>Hold</b> auto-fire' }),
         h('div', { html: '<b>Right-drag</b> grab &amp; throw a limb' }),
+        h('div', { html: '<b>Hold Shift</b> slow motion' }),
         h('div', { html: '<b>Drag</b> background to orbit · <b>Wheel</b> zoom' }),
         h('div', { html: '<b>1-9 / Q E</b> weapons · <b>R</b> new boss' }),
       ),
@@ -66,6 +70,10 @@ export class Hud {
         h('button', { 'data-label': a.label, 'aria-label': a.label, 'data-id': a.id, onclick: () => a.onClick() }, a.icon),
       ),
     );
+  }
+
+  setBulletTime(on: boolean): void {
+    this.bulletTime.classList.toggle('on', on);
   }
 
   setBossName(name: string): void {

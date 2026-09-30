@@ -6,6 +6,8 @@ export const ROOM = {
   back: -3,
   front: 3.2,
   height: 6,
+  /** The visible room continues behind the camera so orbiting never leaves the box. */
+  visualFront: 7.8,
 } as const;
 
 export type Surface = 'floor' | 'wall' | 'ceiling' | 'glass';

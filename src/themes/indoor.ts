@@ -25,7 +25,7 @@ function barrel(g: THREE.Group, colliders: StaticBox[], x: number, z: number, co
 export const warehouse: ThemeDef = {
   id: 'warehouse',
   name: 'Warehouse',
-  price: 300,
+  price: 800,
   dust: 0xb9b2a5,
   build() {
     const g = new THREE.Group();
@@ -74,7 +74,7 @@ export const warehouse: ThemeDef = {
 export const boxingRing: ThemeDef = {
   id: 'ring',
   name: 'Boxing Ring',
-  price: 500,
+  price: 1200,
   dust: 0xe0e0e0,
   build() {
     const g = new THREE.Group();
@@ -137,7 +137,7 @@ export const boxingRing: ThemeDef = {
 export const kitchen: ThemeDef = {
   id: 'kitchen',
   name: 'Staff Kitchen',
-  price: 600,
+  price: 1500,
   dust: 0xf2efe6,
   build() {
     const g = new THREE.Group();
@@ -181,7 +181,7 @@ export const kitchen: ThemeDef = {
 export const lab: ThemeDef = {
   id: 'lab',
   name: 'Science Lab',
-  price: 1000,
+  price: 2500,
   dust: 0xc9f2ff,
   build() {
     const g = new THREE.Group();

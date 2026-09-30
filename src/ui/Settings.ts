@@ -103,7 +103,7 @@ export function openSettings(parent: HTMLElement, host: SettingsHost): void {
       'div',
       { class: 'controls-help' },
       h('h3', { text: 'Controls' }),
-      h('p', { html: '<b>Left click</b> use weapon (hold for auto-fire) · <b>Right-drag</b> or <b>Shift+drag</b> grab a limb and fling him · with Fists, <b>drag</b> on the boss to grab' }),
+      h('p', { html: '<b>Left click</b> use weapon (hold for auto-fire) · <b>Right-drag</b> grab a limb or any object and fling it · with Fists, <b>drag</b> on the boss to grab · <b>Hold Shift</b> slow motion' }),
       h('p', { html: '<b>Drag the background</b> to orbit · <b>Mouse wheel</b> zoom (or push/pull while grabbing) · <b>1-9</b>, <b>Q</b>/<b>E</b> switch weapons · <b>R</b> new boss' }),
     ),
   );

@@ -54,6 +54,7 @@ export class Boss {
     this.mesh.addTo(scene);
     for (const [name, part] of this.ragdoll.parts) this.sync.add(part.body, this.mesh.parts.get(name)!);
     this.damage = new DamageSystem(this.ragdoll);
+    this.ragdoll.onStep = () => audio.play('step', { intensity: 0.2 });
     this.injuries = new Injuries(this.mesh, this.ragdoll, fx);
     // Pop in with a puff of smoke.
     for (const g of this.mesh.parts.values()) g.scale.setScalar(0.01);

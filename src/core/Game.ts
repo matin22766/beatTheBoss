@@ -31,6 +31,7 @@ import { saveProfile } from '../face/FaceProfile';
 import { roomPoint } from './roomPoint';
 
 const IMPACT_MIN_SPEED = 4;
+export const BULLET_TIME_SCALE = 0.25;
 
 type PointerMode = 'none' | 'weapon' | 'orbit' | 'pending-grab' | 'grab';
 
@@ -75,6 +76,10 @@ export class Game {
   private hitstopT = 0;
   private timeScale = 1;
   private slowmoT = 0;
+  private finisherScale = 1;
+  /** Hold Shift for bullet time. */
+  bulletTime = false;
+  private bulletScale = 1;
   private respawnT = -1;
   private preVel = new Map<number, THREE.Vector3>();
   private impactCooldown = 0;
@@ -322,8 +327,9 @@ export class Game {
     this.hitstopT = Math.max(this.hitstopT, seconds);
   }
 
+  /** Temporary slow motion (death finishers). Combines with bullet time: the slower one wins. */
   slowmo(scale: number, seconds: number): void {
-    this.timeScale = scale;
+    this.finisherScale = scale;
     this.slowmoT = seconds;
   }
 
@@ -366,8 +372,14 @@ export class Game {
 
     if (this.slowmoT > 0) {
       this.slowmoT -= realDt;
-      if (this.slowmoT <= 0) this.timeScale = 1;
+      if (this.slowmoT <= 0) this.finisherScale = 1;
     }
+    // Ease in and out of bullet time.
+    const btTarget = this.bulletTime ? BULLET_TIME_SCALE : 1;
+    this.bulletScale += (btTarget - this.bulletScale) * Math.min(1, realDt * 10);
+    if (Math.abs(this.bulletScale - btTarget) < 0.01) this.bulletScale = btTarget;
+    this.timeScale = Math.min(this.finisherScale, this.bulletScale);
+    audio.setTimeScale(this.timeScale);
     const scaledDt = realDt * this.timeScale;
     this.time += scaledDt;
 
@@ -513,7 +525,7 @@ export class Game {
       this.pointer.startX = this.pointer.lastX = this.pointer.x;
       this.pointer.startY = this.pointer.lastY = this.pointer.y;
       const aim = this.aim();
-      const grabButton = e.button === 2 || (e.button === 0 && e.shiftKey);
+      const grabButton = e.button === 2;
       if (grabButton) {
         if (aim.hit && this.startGrab(aim.hit)) return;
         this.pointer.mode = 'orbit';
@@ -590,6 +602,19 @@ export class Game {
       },
       { passive: false },
     );
+    const setBulletTime = (on: boolean) => {
+      if (on === this.bulletTime) return;
+      this.bulletTime = on;
+      this.hud.setBulletTime(on);
+      audio.play(on ? 'slowIn' : 'slowOut', { intensity: 0.8 });
+    };
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Shift' && !e.repeat) setBulletTime(true);
+    });
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'Shift') setBulletTime(false);
+    });
+    window.addEventListener('blur', () => setBulletTime(false));
     window.addEventListener('keydown', (e) => {
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
       if (e.key === 'r' || e.key === 'R') this.spawnBoss();

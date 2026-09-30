@@ -61,7 +61,8 @@ Everything runs locally in the browser. Uploaded photos never leave your device.
 | Action | Input |
 | --- | --- |
 | Use weapon | Left click. Hold to auto-fire, spray or saw. |
-| Grab and throw a limb | Right-drag, or Shift and drag. With fists, drag the boss. |
+| Grab and throw a limb | Right-drag. With fists, drag the boss. |
+| Slow motion (bullet time) | Hold Shift |
 | Push or pull while grabbing | Mouse wheel |
 | Orbit / zoom camera | Drag the background / mouse wheel |
 | Switch weapon | `1`–`9`, or `Q` / `E` |

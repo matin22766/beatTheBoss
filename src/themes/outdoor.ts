@@ -19,7 +19,7 @@ function backdrop(map: THREE.Texture, w = 26, h = 13, z = ROOM.back - 6, y = 4):
 export const rooftop: ThemeDef = {
   id: 'rooftop',
   name: 'Rooftop at Night',
-  price: 800,
+  price: 2000,
   dust: 0x8c93a8,
   build() {
     const g = new THREE.Group();
@@ -93,7 +93,7 @@ export const rooftop: ThemeDef = {
 export const beach: ThemeDef = {
   id: 'beach',
   name: 'Beach Day',
-  price: 1200,
+  price: 3000,
   dust: 0xf3dfae,
   build() {
     const g = new THREE.Group();
@@ -146,7 +146,7 @@ export const beach: ThemeDef = {
 export const space: ThemeDef = {
   id: 'space',
   name: 'Space Station',
-  price: 1500,
+  price: 4000,
   gravity: -3.2,
   dust: 0xc8d4ff,
   build() {

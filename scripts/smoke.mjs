@@ -5,7 +5,7 @@ import { mkdirSync, existsSync } from 'node:fs';
 
 const url = process.argv[2] ?? 'http://localhost:5173/?debug';
 // SMOKE=basic,weapons,deaths (default: all). The software renderer is slow, so run sections separately.
-const sections = new Set((process.env.SMOKE ?? 'basic,weapons,deaths,face,shop,themes').split(','));
+const sections = new Set((process.env.SMOKE ?? 'basic,bullettime,camera,weapons,deaths,face,shop,themes').split(','));
 const out = 'smoke-out';
 mkdirSync(out, { recursive: true });
 const exe = ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome', '/opt/pw-browsers/chromium'].find((p) => existsSync(p));
@@ -79,6 +79,37 @@ await page.mouse.up({ button: 'right' });
 await wait(1200);
 await shot('04-thrown');
 
+}
+
+// ---- Bullet time: hold Shift while he flies ----
+if (sections.has('bullettime')) {
+  await page.evaluate(() => {
+    const g = window.__game;
+    for (const p of g.boss.ragdoll.parts.values()) p.body.setLinvel({ x: 0, y: 7, z: 0 }, true);
+  });
+  await page.keyboard.down('Shift');
+  await wait(1500);
+  const ts = await page.evaluate(() => window.__game.timeScale);
+  await shot('bt-on');
+  await page.keyboard.up('Shift');
+  await wait(1200);
+  const ts2 = await page.evaluate(() => window.__game.timeScale);
+  if (Math.abs(ts - 0.25) > 0.02 || ts2 < 0.99) errors.push(`bullet time scales wrong: ${ts} → ${ts2}`);
+}
+
+// ---- Camera stays inside the arena while orbiting hard ----
+if (sections.has('camera')) {
+  for (const [dx, dy] of [[-900, 0], [1800, 0], [0, -600], [0, 900]]) {
+    await page.mouse.move(80, 300);
+    await page.mouse.down();
+    await page.mouse.move(80 + dx, 300 + dy, { steps: 6 });
+    await page.mouse.up();
+    for (let i = 0; i < 6; i++) await page.mouse.wheel(0, 800);
+    await wait(1500);
+    const c = await page.evaluate(() => window.__game.rig.camera.position.toArray());
+    if (Math.abs(c[0]) > 4.8 || c[1] < 0.1 || c[1] > 5.9 || c[2] > 7.7 || c[2] < -2.9) errors.push('camera left the room: ' + c.join(','));
+  }
+  await shot('camera-orbit');
 }
 
 // ---- Every weapon: select, aim at the chest, fire/hold, check it did something ----

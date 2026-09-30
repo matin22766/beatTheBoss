@@ -68,8 +68,8 @@ export interface RoomMaterials {
 /** Floor, back wall, two side walls and ceiling matching the physics room. */
 export function buildRoom(mats: RoomMaterials): THREE.Group {
   const g = new THREE.Group();
-  const { halfWidth: hw, back, front, height: h } = ROOM;
-  const depth = front - back + 3;
+  const { halfWidth: hw, back, visualFront, height: h } = ROOM;
+  const depth = visualFront - back;
   const midZ = back + depth / 2;
 
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(hw * 2, depth), mats.floor);
