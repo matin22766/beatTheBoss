@@ -193,8 +193,54 @@ if (sections.has('brain')) {
   await waitGame(2);
   await shot('b-phone');
   await page.evaluate(() => window.__game.boss.brain['start']('wander'));
-  await waitGame(4);
+  await waitGame(1.2);
+  await shot('b-walk-mid');
+  await waitGame(3);
   await shot('b-wander');
+  // Grounding: while he stands or walks, a foot must be on the floor (no hovering).
+  await page.evaluate(() => {
+    const g = window.__game;
+    g.boss.brain.interrupt();
+    g.boss.ragdoll.walkTo(2, 0.5);
+  });
+  let hover = 0;
+  let worst = 0;
+  for (let i = 0; i < 25; i++) {
+    await waitGame(0.08);
+    const low = await page.evaluate(() => {
+      const r = window.__game.boss.ragdoll;
+      return r.isGettingUp || r.seated ? 0 : Math.min(r.lowestPoint(r.get('footL')), r.lowestPoint(r.get('footR')));
+    });
+    worst = Math.max(worst, low);
+    hover = low > 0.04 ? hover + 1 : 0;
+    if (hover > 4) {
+      errors.push('boss hovering: feet ' + low.toFixed(3) + ' m above the floor');
+      break;
+    }
+  }
+  console.log('walking: highest lowest-foot', worst.toFixed(3));
+  await page.evaluate(() => {
+    const b = window.__game.boss.brain;
+    b.interrupt();
+    b['start']('floorSit');
+  });
+  await waitGame(3);
+  await shot('b-floor-sit');
+  const floorSit = await page.evaluate(() => ({ state: window.__game.boss.brain.state, pelvis: window.__game.boss.ragdoll.position('pelvis').y }));
+  if (floorSit.state !== 'floorSit' || floorSit.pelvis > 0.4) errors.push('floor sit failed: ' + JSON.stringify(floorSit));
+  // A shove: he should catch himself with a step (and stay up).
+  await page.evaluate(() => {
+    const g = window.__game;
+    g.boss.brain.interrupt();
+  });
+  await waitGame(4);
+  await page.evaluate(() => {
+    const r = window.__game.boss.ragdoll;
+    r.stagger(0.2);
+    r.applyImpulseAt('chest', new window.__THREE.Vector3(60, 0, 0), r.position('chest'));
+  });
+  await waitGame(0.4);
+  await shot('b-catch-step');
 }
 
 // ---- Dodging: with a 100% dodge chance, punches whiff ----

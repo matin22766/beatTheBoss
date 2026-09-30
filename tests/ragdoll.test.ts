@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as THREE from 'three';
-import { initRapier, PhysicsWorld, PHYSICS_DT } from '../src/physics/PhysicsWorld';
+import { initRapier, PhysicsWorld, PHYSICS_DT, RAPIER } from '../src/physics/PhysicsWorld';
 import { buildArenaColliders } from '../src/physics/ArenaColliders';
 import { Ragdoll } from '../src/character/Ragdoll';
 
@@ -68,26 +68,98 @@ describe('Ragdoll locomotion & grounding', () => {
     await initRapier();
   });
 
-  it('stands with his weight on his feet', () => {
+  it('stands with his feet planted on the floor', () => {
     const { boss, run } = setup();
     run(3);
-    expect(boss.position('footL').y).toBeLessThan(0.07);
-    expect(boss.position('footR').y).toBeLessThan(0.07);
-    expect(Math.abs(boss.position('pelvis').y - 0.995)).toBeLessThan(0.05);
+    for (const f of ['footL', 'footR'] as const) expect(boss.lowestPoint(boss.get(f))).toBeLessThan(0.01);
+    expect(Math.abs(boss.position('pelvis').y - 0.985)).toBeLessThan(0.05);
   });
 
-  it('walks to a point and stops there', () => {
-    const { boss, run } = setup();
+  it('cannot float: lifted off the floor he drops like a stone', () => {
+    const { boss, physics, run } = setup();
+    run(2);
+    for (const p of boss.parts.values()) {
+      const t = p.body.translation();
+      p.body.setTranslation({ x: t.x, y: t.y + 0.3, z: t.z }, true);
+      p.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    }
+    const y0 = boss.position('pelvis').y;
+    const steps = 9;
+    for (let i = 0; i < steps; i++) physics.step(PHYSICS_DT);
+    const t = steps * PHYSICS_DT;
+    const accel = (2 * (y0 - boss.position('pelvis').y)) / (t * t);
+    expect(accel).toBeGreaterThan(0.8 * 9.81);
+  });
+
+  it('walks to a point with real steps, always keeping a foot on the floor', () => {
+    const { boss, physics, run } = setup();
     run(1);
     let steps = 0;
     boss.onStep = () => steps++;
     boss.walkTo(2, 0.5);
-    run(6);
+    let airborne = 0;
+    for (let i = 0; i < 6 / PHYSICS_DT; i++) {
+      physics.step(PHYSICS_DT);
+      const low = Math.min(boss.lowestPoint(boss.get('footL')), boss.lowestPoint(boss.get('footR')));
+      airborne = low > 0.03 ? airborne + 1 : 0;
+      expect(airborne).toBeLessThan(6);
+    }
     const p = boss.position('pelvis');
     expect(Math.hypot(p.x - 2, p.z - 0.5)).toBeLessThan(0.35);
     expect(boss.walking).toBe(false);
     expect(steps).toBeGreaterThanOrEqual(3);
     expect(boss.position('head').y).toBeGreaterThan(1.6);
+  });
+
+  it('takes a catch step when shoved, and falls when shoved too hard', () => {
+    const light = setup();
+    light.run(2);
+    light.boss.stagger(0.2);
+    light.boss.applyImpulseAt('chest', new THREE.Vector3(60, 0, 0), light.boss.position('chest'));
+    let stepped = false;
+    for (let i = 0; i < 60; i++) {
+      light.run(PHYSICS_DT);
+      stepped ||= light.boss.walking;
+    }
+    light.run(2);
+    expect(stepped).toBe(true);
+    expect(light.boss.isStanding()).toBe(true);
+
+    const hard = setup();
+    hard.run(2);
+    hard.boss.stagger(0.2);
+    hard.boss.applyImpulseAt('chest', new THREE.Vector3(250, 0, 0), hard.boss.position('chest'));
+    hard.run(1.5);
+    expect(hard.boss.position('head').y).toBeLessThan(1.2);
+  });
+
+  it('sits on the floor under his own weight, then gets back up', () => {
+    const { boss, run } = setup();
+    run(1);
+    boss.sitOnFloor(true);
+    boss.setPose('sitFloor', 0.5, 10);
+    run(3);
+    expect(boss.position('pelvis').y).toBeLessThan(0.35);
+    expect(boss.position('head').y).toBeGreaterThan(0.8);
+    boss.sitOnFloor(false);
+    run(5);
+    expect(boss.position('head').y).toBeGreaterThan(1.6);
+  });
+
+  it('sits on a chair: the seat carries him, feet on the floor', () => {
+    const { boss, physics, run } = setup();
+    run(1);
+    const seatTop = 0.45;
+    const chair = physics.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, seatTop / 2, -0.35));
+    physics.world.createCollider(RAPIER.ColliderDesc.cuboid(0.22, seatTop / 2, 0.22), chair);
+    const m = boss.totalAttachedMass();
+    physics.world.createImpulseJoint(RAPIER.JointData.spring(0, m * 45, m * 10, { x: 0, y: 0, z: 0 }, { x: 0, y: seatTop / 2 + 0.12, z: 0 }), boss.get('pelvis').body, chair, true);
+    boss.sitting = true;
+    boss.setPose('sit', 0.4, 10);
+    run(3);
+    expect(Math.abs(boss.position('pelvis').y - (seatTop + 0.12))).toBeLessThan(0.15);
+    expect(Math.min(boss.lowestPoint(boss.get('footL')), boss.lowestPoint(boss.get('footR')))).toBeLessThan(0.08);
+    expect(boss.position('head').y).toBeGreaterThan(1.2);
   });
 
   it('falls instead of hovering when thrown up', () => {

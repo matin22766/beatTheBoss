@@ -11,6 +11,10 @@ Everything runs locally in the browser. Uploaded photos never leave your device.
 - **Physics ragdoll**: a 15-part [Rapier](https://rapier.rs) ragdoll that holds procedural poses,
   keeps its balance, staggers, gets dizzy and climbs back to its feet. Grab any hand, foot or his
   head and hurl him into walls, furniture or the ceiling. Impacts deal damage.
+- **Grounded body**: his legs hold him up by pushing on the floor (no invisible strings), so he
+  can't float. He walks with real steps (the planted foot grips, the swing foot lifts and lands),
+  catches himself with a stumble step when shoved, topples when shoved too hard, and sits on
+  chairs or on the floor, then gets back up. Soft contact shadows show where his feet touch the floor.
 - **Face swap with an animated morph loader**: MediaPipe finds 478 landmarks. The photo is
   unwrapped onto a real 3D face mesh, relief-mapped onto the boss's head, and colour-matched. The
   loader visibly scans the photo, pops in landmarks, weaves the wireframe, peels the face off in 3D

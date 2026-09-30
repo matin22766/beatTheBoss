@@ -17,6 +17,7 @@ import type { PropSystem } from '../props/PropSystem';
 import { RAPIER } from '../physics/PhysicsWorld';
 import { Injuries, injuryFor } from '../gore/Injuries';
 import { PART_NAMES } from './RagdollDef';
+import { ContactShadows } from './ContactShadows';
 
 /** The boss: physics ragdoll + visuals + damage, reacting to every hit. */
 export class Boss {
@@ -42,6 +43,7 @@ export class Boss {
   private weldJoint: RAPIER.ImpulseJoint | null = null;
   private weldSeat: Seat | null = null;
   private readonly physics: PhysicsWorld;
+  private readonly shadows: ContactShadows;
 
   constructor(
     physics: PhysicsWorld,
@@ -63,7 +65,12 @@ export class Boss {
     for (const [name, part] of this.ragdoll.parts) this.sync.add(part.body, this.mesh.parts.get(name)!);
     this.damage = new DamageSystem(this.ragdoll);
     this.physics = physics;
-    this.ragdoll.onStep = () => audio.play('step', { intensity: 0.2 });
+    this.ragdoll.onStep = (foot) => {
+      audio.play('step', { intensity: 0.2 });
+      const p = this.ragdoll.position(foot);
+      fx.dustPuff(new THREE.Vector3(p.x, 0.02, p.z), new THREE.Vector3(0, 1, 0), 0xd8d0c0, 0.12);
+    };
+    this.shadows = new ContactShadows(scene, 0);
     this.brain = new BossBrain(this.brainHost());
     this.injuries = new Injuries(this.mesh, this.ragdoll, fx);
     // Pop in with a puff of smoke.
@@ -241,6 +248,7 @@ export class Boss {
       for (const g of this.mesh.parts.values()) g.scale.setScalar(Math.max(0.01, t < 1 ? easeOutBack(t) * s : 1));
     }
     this.updateStatus(dt, time);
+    this.shadows.update(this.ragdoll);
     this.sinceHit += dt;
     this.gruntCooldown -= dt;
     this.painLevel = Math.max(0, this.painLevel - dt * 0.8);
@@ -296,7 +304,7 @@ export class Boss {
         r.strength > 0.55 &&
         !r.grabbed &&
         !r.isGettingUp &&
-        (this.weldJoint !== null || r.isStanding()),
+        (this.weldJoint !== null || r.seated || r.isStanding()),
       position: () => r.position('pelvis'),
       walkTo: (x, z, speed) => r.walkTo(x, z, speed),
       stopWalking: () => (r.walkTarget = null),
@@ -307,6 +315,7 @@ export class Boss {
       sidestep: (dv) => {
         for (const p of r.parts.values()) if (p.attached) p.body.applyImpulse({ x: dv.x * p.def.mass, y: 0.4 * p.def.mass, z: dv.z * p.def.mass }, true);
       },
+      sitOnFloor: (on) => r.sitOnFloor(on),
       findSeat: () => this.findSeat(),
       weld: (seat) => this.weld(seat),
       unweld: () => this.unweld(),
@@ -349,16 +358,21 @@ export class Boss {
     const data = RAPIER.JointData.spring(0, m * 45, m * 10, { x: 0, y: 0, z: 0 }, { x: 0, y: (prop.spec.seat ?? 0) + 0.12, z: 0 });
     this.weldJoint = this.physics.world.createImpulseJoint(data, pelvis, prop.body, true);
     this.weldSeat = seat;
-    this.ragdoll.heightOffset = seat.point().y + 0.12 - 0.995;
+    // The chair carries him now, not his legs.
+    this.ragdoll.sitting = true;
     audio.play('thunk', { intensity: 0.4, pitch: 0.8 });
     return true;
   }
 
   private unweld(): void {
     if (this.weldJoint && this.weldJoint.isValid()) this.physics.world.removeImpulseJoint(this.weldJoint, true);
+    const was = this.weldJoint !== null;
     this.weldJoint = null;
     this.weldSeat = null;
-    this.ragdoll.heightOffset = 0;
+    if (was) {
+      this.ragdoll.sitting = false;
+      this.ragdoll.heightOffset = 0;
+    }
   }
 
   /** Let go of the seat if it broke, fell over or ended up far away. */
@@ -397,6 +411,7 @@ export class Boss {
     for (const part of this.ragdoll.parts.values()) this.sync.removeBody(part.body);
     this.mesh.removeFrom(this.scene);
     this.mesh.dispose();
+    this.shadows.dispose();
     this.ragdoll.dispose();
     this.fx.setDizzy(null, 0);
   }

@@ -139,7 +139,7 @@ const leftLeg: PartDef[] = [
     pos: [legX, 0.045, 0.04],
     mass: 1.2,
     parent: 'shinL',
-    joint: { kind: 'spherical', anchor: [legX, 0.11, 0], swingLimit: 0.7, stiffness: 0.8, severHp: 35 },
+    joint: { kind: 'spherical', anchor: [legX, 0.11, 0], swingLimit: 1.1, stiffness: 0.8, severHp: 35 },
     breakHp: 16,
     vital: 0.4,
   },

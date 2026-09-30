@@ -21,7 +21,9 @@ export type PoseName =
   | 'dodgeLeft'
   | 'dodgeRight'
   | 'duck'
-  | 'matrix';
+  | 'matrix'
+  | 'stumble'
+  | 'sitFloor';
 
 /** Mirror left-side rotations to the right side (reflection across the YZ plane). */
 function mirror(left: Partial<Record<'upperArm' | 'lowerArm' | 'hand' | 'thigh' | 'shin' | 'foot', Rot>>): Pose {
@@ -34,6 +36,32 @@ function mirror(left: Partial<Record<'upperArm' | 'lowerArm' | 'hand' | 'thigh' 
 }
 
 const s = Math.sin;
+
+/** Walking legs and arms. `lean` adds a stumbling forward lean. */
+function gait(p: number, lean: number): Pose {
+  const swingL = Math.max(0, Math.cos(p));
+  const swingR = Math.max(0, -Math.cos(p));
+  const thighL = -0.45 * s(p) - 0.2 * swingL;
+  const thighR = 0.45 * s(p) - 0.2 * swingR;
+  const shinL = 0.05 + swingL * 0.8;
+  const shinR = 0.05 + swingR * 0.8;
+  return {
+    chest: [0.08 + lean * 0.1, 0.12 * s(p), 0],
+    head: [-0.06, -0.08 * s(p), 0],
+    upperArmL: [0.45 * s(p), 0, 0.12],
+    upperArmR: [-0.45 * s(p), 0, -0.12],
+    lowerArmL: [-0.45, 0, 0],
+    lowerArmR: [-0.45, 0, 0],
+    // Hip swing, plus extra hip flex and knee lift while the leg swings through.
+    thighL: [thighL, 0, 0.03],
+    thighR: [thighR, 0, -0.03],
+    shinL: [shinL, 0, 0],
+    shinR: [shinR, 0, 0],
+    // Keep the sole level with the floor (undo the leg's pitch) so toes never scrape.
+    footL: [-(thighL + shinL), 0, 0],
+    footR: [-(thighR + shinR), 0, 0],
+  };
+}
 
 export const POSES: Record<PoseName, (t: number) => Pose> = {
   idle: (t) => ({
@@ -98,20 +126,18 @@ export const POSES: Record<PoseName, (t: number) => Pose> = {
       shin: [0.5, 0, 0],
     }),
   }),
-  /** t = gait phase (radians), advanced by distance walked. */
-  walk: (p) => ({
-    chest: [0.06, 0.12 * s(p), 0],
-    head: [-0.04, -0.08 * s(p), 0],
-    upperArmL: [0.45 * s(p), 0, 0.12],
-    upperArmR: [-0.45 * s(p), 0, -0.12],
-    lowerArmL: [-0.45, 0, 0],
-    lowerArmR: [-0.45, 0, 0],
-    thighL: [-0.55 * s(p), 0, 0.03],
-    thighR: [0.55 * s(p), 0, -0.03],
-    shinL: [0.15 + Math.max(0, -Math.cos(p)) * 0.8, 0, 0],
-    shinR: [0.15 + Math.max(0, Math.cos(p)) * 0.8, 0, 0],
-    footL: [-0.15 * s(p), 0, 0],
-    footR: [0.15 * s(p), 0, 0],
+  /**
+   * t = gait phase (radians), advanced by distance walked. The left thigh swings forward while
+   * cos(p) > 0: that is its swing phase, so only then does its knee lift. The other leg is the
+   * stance leg, kept nearly straight to carry his weight.
+   */
+  walk: (p) => gait(p, 0),
+  /** Catch step after a shove: the same gait, arms flung out for balance. */
+  stumble: (p) => ({
+    ...gait(p, 1),
+    chest: [0.22, 0.1 * s(p), 0],
+    head: [-0.2, 0, 0],
+    ...mirror({ upperArm: [-0.6, 0, 1.1], lowerArm: [-0.5, 0, 0] }),
   }),
   /** t = get-up progress 0 (on the floor) … 1 (standing). */
   getup: (k) => {
@@ -135,8 +161,21 @@ export const POSES: Record<PoseName, (t: number) => Pose> = {
     ...mirror({
       thigh: [-1.5, 0, 0.12],
       shin: [1.45, 0, 0],
+      foot: [0.05, 0, 0],
       upperArm: [-0.5, 0, 0.2],
       lowerArm: [-0.9, 0, 0],
+    }),
+  }),
+  /** Sitting on the floor, knees up, forearms resting on them, head bobbing along to a tune. */
+  sitFloor: (t) => ({
+    chest: [0.25, 0.08 * s(t * 0.5), 0],
+    head: [0.05 + 0.08 * s(t * 2.2), 0.2 * s(t * 0.4), 0],
+    ...mirror({
+      thigh: [-1.25, 0, 0.2],
+      shin: [1.3, 0, 0],
+      foot: [0, 0, 0],
+      upperArm: [-0.9, 0, 0.25],
+      lowerArm: [-0.8, 0, 0],
     }),
   }),
   phone: (t) => ({

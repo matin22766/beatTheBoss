@@ -24,6 +24,7 @@ function fake(opts: { seat?: boolean; rand?: () => number } = {}) {
     setLookYaw: () => {},
     setHeightOffset: () => {},
     sidestep: () => log.push('sidestep'),
+    sitOnFloor: (on) => log.push(`floor ${on}`),
     findSeat: () => (opts.seat ? seat : null),
     weld: () => (welded = true),
     unweld: () => {
@@ -89,5 +90,18 @@ describe('BossBrain', () => {
     brain.update(0.1);
     expect(brain.state).toBe('recover');
     expect(host.isWalking()).toBe(false);
+  });
+
+  it('sits on the floor for a while, then gets back up', () => {
+    const { brain, log } = fake({ seat: false, rand: () => 0.36 });
+    // Without seats, rand 0.36 of the table lands on "floorSit".
+    expect(brain.pickActivity()).toBe('floorSit');
+    brain.update(3);
+    expect(brain.state).toBe('floorSit');
+    expect(log).toContain('floor true');
+    expect(log).toContain('pose sitFloor');
+    brain.update(20);
+    expect(log).toContain('floor false');
+    expect(brain.state).toBe('recover');
   });
 });

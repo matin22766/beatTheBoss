@@ -23,6 +23,8 @@ export interface BrainHost {
   setHeightOffset(h: number): void;
   /** Sidestep: push the whole body with this velocity change. */
   sidestep(dv: THREE.Vector3): void;
+  /** Sit down on the floor (true) or stand back up (false). */
+  sitOnFloor(on: boolean): void;
   findSeat(): Seat | null;
   weld(seat: Seat): boolean;
   unweld(): void;
@@ -31,8 +33,8 @@ export interface BrainHost {
   rand(): number;
 }
 
-export type Activity = 'wander' | 'sit' | 'phone' | 'dance' | 'stretch' | 'watch' | 'taunt' | 'idle';
-export type BrainState = 'idle' | 'wander' | 'goSit' | 'sitting' | 'activity' | 'flee' | 'recover';
+export type Activity = 'wander' | 'sit' | 'floorSit' | 'phone' | 'dance' | 'stretch' | 'watch' | 'taunt' | 'idle';
+export type BrainState = 'idle' | 'wander' | 'goSit' | 'sitting' | 'floorSit' | 'activity' | 'flee' | 'recover';
 export type DodgeKind = 'fist' | 'melee' | 'bullet' | 'projectile';
 
 export const DODGE_CHANCE: Record<DodgeKind, number> = { fist: 0.25, melee: 0.2, bullet: 0.1, projectile: 0.3 };
@@ -41,6 +43,7 @@ export const DODGE_COOLDOWN = 1.5;
 const WEIGHTS: Array<[Activity, number]> = [
   ['wander', 30],
   ['sit', 20],
+  ['floorSit', 10],
   ['phone', 12],
   ['watch', 10],
   ['dance', 8],
@@ -113,6 +116,15 @@ export class BossBrain {
         this.approachTries = 0;
         break;
       }
+      case 'floorSit': {
+        h.stopWalking();
+        h.sitOnFloor(true);
+        this.state = 'floorSit';
+        this.timer = 6 + h.rand() * 6;
+        h.setPose('sitFloor', 0.5, this.timer);
+        this.sayTimer = 1.5;
+        break;
+      }
       case 'idle':
         this.state = 'idle';
         this.timer = 2 + h.rand() * 3;
@@ -133,6 +145,7 @@ export class BossBrain {
   /** Stop whatever he was doing (hit, grabbed, knocked down). */
   interrupt(): void {
     if (this.host.welded()) this.host.unweld();
+    if (this.state === 'floorSit') this.host.sitOnFloor(false);
     this.host.setHeightOffset(0);
     this.host.setLookYaw(null);
     this.host.stopWalking();
@@ -161,7 +174,7 @@ export class BossBrain {
    */
   tryDodge(kind: DodgeKind, dir: THREE.Vector3): boolean {
     const h = this.host;
-    if (this.dodgeCooldown > 0 || !h.canAct() || this.state === 'sitting') return false;
+    if (this.dodgeCooldown > 0 || !h.canAct() || this.state === 'sitting' || this.state === 'floorSit') return false;
     if (h.rand() >= DODGE_CHANCE[kind] * this.dodgeScale) return false;
     this.dodgeCooldown = DODGE_COOLDOWN;
     h.stopWalking();
@@ -223,6 +236,8 @@ export class BossBrain {
         if (!h.isWalking()) {
           const p = seat.point();
           const yaw = seat.yaw();
+          // Turn his back to the seat before sitting down.
+          h.setLookYaw(yaw);
           const ax = p.x + Math.sin(yaw) * 0.35;
           const az = p.z + Math.cos(yaw) * 0.35;
           const pos = h.position();
@@ -246,6 +261,19 @@ export class BossBrain {
           this.interrupt();
           this.state = 'idle';
           this.timer = 1;
+        }
+        break;
+      case 'floorSit':
+        this.sayTimer -= dt;
+        if (this.sayTimer <= 0) {
+          h.say(h.rand() < 0.5 ? 'hum' : 'yawn');
+          this.sayTimer = 3 + h.rand() * 3;
+        }
+        if (this.timer <= 0) {
+          // Get up (the body plays its own get-up) and have a moment before the next thing.
+          h.sitOnFloor(false);
+          this.state = 'recover';
+          this.timer = 2.5;
         }
         break;
       case 'activity':
