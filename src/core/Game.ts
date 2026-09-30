@@ -1,16 +1,20 @@
 import * as THREE from 'three';
 import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 import { initRapier, PhysicsWorld, PHYSICS_DT, RAPIER, G, groups } from '../physics/PhysicsWorld';
-import { buildArenaColliders, ROOM, type Surface } from '../physics/ArenaColliders';
+import { buildArenaColliders, type Surface } from '../physics/ArenaColliders';
+import { limbRadius } from '../character/BossMesh';
 import { BodySync } from './BodySync';
 import { EventBus } from './EventBus';
 import { CameraRig } from './CameraRig';
-import type { GameEvents, HitInfo, HitResult } from './types';
+import type { DeathStyle, GameEvents, HitInfo, HitResult } from './types';
 import { Boss } from '../character/Boss';
 import type { PartRuntime } from '../character/Ragdoll';
 import { Effects } from '../fx/Effects';
 import { GrabController } from '../interaction/GrabController';
-import { WeaponSystem } from '../combat/weapons/WeaponSystem';
+import { WeaponSystem, usesViewModel } from '../combat/weapons/WeaponSystem';
+import { ViewModel } from '../combat/weapons/ViewModel';
+import { WeaponBar } from '../ui/WeaponBar';
+import { DeathDirector } from '../death/DeathDirector';
 import { WEAPONS } from '../combat/weapons/weaponDefs';
 import type { Aim, BossHit, WeaponCtx, WeaponDef } from '../combat/weapons/types';
 import { Economy } from '../economy/Economy';
@@ -19,6 +23,7 @@ import { audio } from '../audio/AudioEngine';
 import type { ThemeDef, ThemeInstance } from '../themes/Theme';
 import { office } from '../themes/office';
 import type { FaceRig } from '../character/Expression';
+import { roomPoint } from './roomPoint';
 
 const IMPACT_MIN_SPEED = 4;
 
@@ -37,6 +42,12 @@ export class Game {
   readonly hud: Hud;
   readonly grab: GrabController;
   readonly weapons: WeaponSystem;
+  readonly viewModel: ViewModel;
+  readonly weaponBar: WeaponBar;
+  readonly deaths: DeathDirector;
+  /** Weapon ownership hook (the shop replaces this). */
+  isOwned: (def: WeaponDef) => boolean = () => true;
+  onLockedWeapon: (def: WeaponDef) => void = () => {};
   boss: Boss | null = null;
   themeDef: ThemeDef = office;
   faceFactory: (() => FaceRig) | null = null;
@@ -45,6 +56,8 @@ export class Game {
   private theme: ThemeInstance | null = null;
   private themeBody: RAPIER.RigidBody | null = null;
   private surfaces = new Map<number, Surface | 'prop'>();
+  private ceiling: RAPIER.Collider | null = null;
+  private frameAim: Aim | null = null;
   private raycaster = new THREE.Raycaster();
   private acc = 0;
   private last = performance.now();
@@ -92,7 +105,11 @@ export class Game {
 
     this.rig = new CameraRig(window.innerWidth / window.innerHeight);
     this.physics = new PhysicsWorld();
-    for (const [handle, kind] of buildArenaColliders(this.physics)) this.surfaces.set(handle, kind);
+    for (const [handle, kind] of buildArenaColliders(this.physics)) {
+      this.surfaces.set(handle, kind);
+      if (kind === 'ceiling') this.ceiling = this.physics.world.getCollider(handle);
+    }
+    this.scene.add(this.rig.camera);
     this.scene.add(this.fx.group);
     this.setTheme(office);
 
@@ -109,8 +126,24 @@ export class Game {
       raycastBoss: (ray, maxDist) => this.raycastBoss(ray, maxDist),
       partForCollider: (h) => this.boss?.ragdoll.byCollider.get(h)?.def.name ?? null,
       hitstop: (s) => this.hitstop(s),
+      viewModel: (this.viewModel = new ViewModel(this.rig.camera)),
+      now: () => this.time,
     };
     this.weapons = new WeaponSystem(ctx, WEAPONS[0]);
+    this.weaponBar = new WeaponBar(ui, {
+      weapons: WEAPONS,
+      isOwned: (d) => this.isOwned(d),
+      onSelect: (d) => this.selectWeapon(d),
+      onLocked: (d) => this.onLockedWeapon(d),
+    });
+    this.deaths = new DeathDirector({
+      scene: this.scene,
+      fx: this.fx,
+      rig: this.rig,
+      slowmo: (scale, s) => this.slowmo(scale, s),
+      banner: (t) => this.hud.banner(t),
+      setCeiling: (on) => this.ceiling?.setEnabled(on),
+    });
 
     this.spawnBoss();
     this.wireEvents();
@@ -161,6 +194,7 @@ export class Game {
     this.grab.release();
     if (this.boss) this.boss.dispose();
     this.fx.clearSpurts();
+    this.deaths.reset();
     this.boss = new Boss(this.physics, this.scene, this.sync, this.events, this.fx, new THREE.Vector3(0, 0.02, 0), this.faceFactory ?? undefined);
     this.impactCooldown = 0;
     this.respawnT = -1;
@@ -211,13 +245,11 @@ export class Game {
       this.hud.setCombo(this.economy.combo, this.economy.multiplier);
       if (this.boss) this.hud.setHp(this.boss.damage.hpFraction, this.boss.dead);
     });
-    this.events.on('death', ({ style }) => {
-      this.hud.banner('K.O.!');
-      audio.play('explosion', { intensity: 0.2, pitch: 2 });
-      this.slowmo(0.3, 1.4);
-      if (this.boss) this.rig.focusOn(this.boss.headPosition(), 3.6, 1.6);
-      this.respawnT = 4;
-      if (import.meta.env.DEV) console.info('death style', style);
+    this.events.on('death', ({ style, cause }) => {
+      if (!this.boss) return;
+      this.grab.release();
+      this.hud.setHp(0, true);
+      this.respawnT = this.deaths.play(style, this.boss, cause);
     });
   }
 
@@ -250,8 +282,11 @@ export class Game {
     if (steps >= 4) this.acc = 0;
     this.sync.apply(this.hitstopT > 0 ? 1 : this.acc / PHYSICS_DT);
 
-    // Held weapons keep firing.
-    if (this.pointer.mode === 'weapon' && this.weapons.isHolding) this.weapons.hold(this.aim(), scaledDt);
+    // One aim raycast per frame, shared by held weapons and the view model.
+    this.frameAim = null;
+    if (this.pointer.mode === 'weapon' && this.weapons.isHolding) this.weapons.hold(this.currentAim(), scaledDt);
+    if (this.viewModel.visible) this.viewModel.update(realDt, this.currentAim().point);
+    this.deaths.update(scaledDt);
 
     this.boss?.update(scaledDt, this.time);
     this.weapons.update(scaledDt);
@@ -321,7 +356,7 @@ export class Game {
     const name = part.def.name;
     const t = part.body.translation();
     const into = v.clone().normalize();
-    const point = new THREE.Vector3(t.x, t.y, t.z).addScaledVector(into, 0.1);
+    const point = new THREE.Vector3(t.x, t.y, t.z).addScaledVector(into, limbRadius(part.def));
     const normal = surface === 'floor' ? new THREE.Vector3(0, 1, 0) : into.clone().negate();
     const massFactor = 0.7 + part.def.mass / 25;
     const amount = Math.min(45, (speed - IMPACT_MIN_SPEED) * 3.2 * massFactor);
@@ -352,6 +387,11 @@ export class Game {
     return this.raycaster.ray.clone();
   }
 
+  /** Aim for this frame (cached). */
+  private currentAim(): Aim {
+    return (this.frameAim ??= this.aim());
+  }
+
   aim(): Aim {
     const ray = this.ray();
     const hit = this.raycastBoss(ray);
@@ -379,7 +419,7 @@ export class Game {
         return;
       }
       if (e.button !== 0) return;
-      if (!aim.hit && this.weapons.current.archetype === 'melee') {
+      if (!aim.hit && this.weapons.current.archetype === 'melee' && !e.ctrlKey) {
         this.pointer.mode = 'orbit';
         return;
       }
@@ -464,25 +504,39 @@ export class Game {
     return true;
   }
 
-  /** Weapons the player can currently use (unlock logic plugs in here). */
-  availableWeapons(): WeaponDef[] {
-    return WEAPONS;
-  }
-
   selectWeapon(def: WeaponDef): void {
+    if (!this.isOwned(def)) {
+      this.onLockedWeapon(def);
+      return;
+    }
     this.weapons.select(def);
+    this.weaponBar.setActive(def.id);
+    this.canvas.classList.toggle('aiming', usesViewModel(def));
     audio.play('click', { intensity: 0.4 });
   }
 
   selectWeaponIndex(i: number): void {
-    const list = this.availableWeapons();
+    const list = this.weaponBar.visible();
     if (list[i]) this.selectWeapon(list[i]);
   }
 
   cycleWeapon(dir: number): void {
-    const list = this.availableWeapons();
+    const list = this.weaponBar.visible().filter((w) => this.isOwned(w));
+    if (!list.length) return;
     const i = list.indexOf(this.weapons.current);
     this.selectWeapon(list[(i + dir + list.length) % list.length]);
+  }
+
+  /** Debug/test hook: kill the boss with a specific death style. */
+  debugKill(style: DeathStyle): void {
+    const boss = this.boss;
+    if (!boss || boss.dead) return;
+    const cause: HitInfo = { part: 'chest', amount: 50, type: 'blunt', point: boss.ragdoll.position('chest'), dir: new THREE.Vector3(0, 0, -1), impulse: 0, source: 'debug' };
+    if (style === 'decapitate') {
+      boss.ragdoll.sever('head');
+      boss.mesh.addStumps('head');
+    }
+    boss.forceKill(style, cause);
   }
 
   // ---------------------------------------------------------------- utils
@@ -508,20 +562,4 @@ export class Game {
     this.physics.dispose();
     this.renderer.dispose();
   }
-}
-
-/** Where a ray hits the inside of the room box (for aiming at empty space). */
-export function roomPoint(ray: THREE.Ray): THREE.Vector3 {
-  let best = 30;
-  const o = ray.origin;
-  const d = ray.direction;
-  const test = (t: number) => {
-    if (t > 0.01 && t < best) best = t;
-  };
-  if (d.y < 0) test(-o.y / d.y);
-  if (d.x > 0) test((ROOM.halfWidth - o.x) / d.x);
-  if (d.x < 0) test((-ROOM.halfWidth - o.x) / d.x);
-  if (d.z < 0) test((ROOM.back - o.z) / d.z);
-  if (d.y > 0) test((ROOM.height - o.y) / d.y);
-  return o.clone().addScaledVector(d, best);
 }

@@ -4,6 +4,13 @@ import { RAGDOLL, getPartDef, type PartDef, type PartName } from './RagdollDef';
 import { createBossMaterials, type BossMaterials } from './materials';
 import { CartoonFace } from './CartoonFace';
 import type { FaceRig } from './Expression';
+import { buildSkeleton } from './Skeleton';
+
+const CHAR = new THREE.Color(0x1d1612);
+const ICE = new THREE.Color(0xa8dcff);
+const XRAY = new THREE.MeshBasicMaterial({ color: 0x5ec8ff, transparent: true, opacity: 0.22, depthWrite: false });
+XRAY.userData.outlineParameters = { visible: false };
+XRAY.userData.shared = true;
 
 /**
  * Procedural cartoon office boss: one Group per ragdoll part, in that body's local frame.
@@ -18,6 +25,12 @@ export class BossMesh {
   readonly headShell: THREE.Mesh;
   private readonly geoms: THREE.BufferGeometry[] = [];
   private readonly decals = new Map<PartName, THREE.Object3D[]>();
+  private skeleton: THREE.Object3D[] = [];
+  private xray = false;
+  private savedMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
+  private baseColors = new Map<THREE.MeshToonMaterial, THREE.Color>();
+  /** 0..1 charring, 0..1 frost, 0..1 electric glow. */
+  readonly tint = { char: 0, frost: 0, glow: 0 };
 
   constructor() {
     const m = (this.materials = createBossMaterials());
@@ -117,6 +130,42 @@ export class BossMesh {
       const shoe = add(`foot${s}`, mesh(g(new RoundedBoxGeometry(0.14, 0.09, 0.27, 3, 0.04)), m.shoe));
       shoe.position.z = 0.005;
     }
+
+    this.skeleton = buildSkeleton(this.parts);
+    for (const mat of Object.values(m)) if (mat instanceof THREE.MeshToonMaterial) this.baseColors.set(mat, mat.color.clone());
+  }
+
+  /** Flicker between flesh and bones (electrocution). */
+  setXray(on: boolean): void {
+    if (on === this.xray) return;
+    this.xray = on;
+    for (const b of this.skeleton) b.visible = on;
+    for (const grp of this.parts.values()) {
+      grp.traverse((o) => {
+        if (!(o instanceof THREE.Mesh) || isSkeleton(o)) return;
+        if (on) {
+          this.savedMaterials.set(o, o.material);
+          o.material = XRAY;
+        } else {
+          const m = this.savedMaterials.get(o);
+          if (m) o.material = m;
+        }
+      });
+    }
+    if (!on) this.savedMaterials.clear();
+  }
+
+  /** Recolour all boss materials for burning / freezing / electric glow. */
+  applyTint(): void {
+    const { char, frost, glow } = this.tint;
+    for (const [mat, base] of this.baseColors) {
+      mat.color.copy(base).lerp(CHAR, Math.min(1, char) * 0.9).lerp(ICE, Math.min(1, frost) * 0.75);
+      mat.emissive.setRGB(glow * 0.3, glow * 0.55, glow * 0.9);
+    }
+  }
+
+  setVisible(v: boolean): void {
+    for (const grp of this.parts.values()) grp.visible = v;
   }
 
   /** Replace the face rig (e.g. with the user's photo face). */
@@ -143,9 +192,20 @@ export class BossMesh {
   }
 
   /** Attach a decal-like child (bruise, cut, stump) to a part so it moves with it. */
-  attach(part: PartName, obj: THREE.Object3D): void {
+  attach(part: PartName, obj: THREE.Object3D, maxPerPart = Infinity): void {
     this.parts.get(part)!.add(obj);
-    this.decals.get(part)!.push(obj);
+    const list = this.decals.get(part)!;
+    list.push(obj);
+    // Drop the oldest removable decal when a part gets crowded (stumps are never removed).
+    const removable = list.filter((d) => d.userData.decal);
+    if (removable.length > maxPerPart) {
+      const old = removable[0];
+      old.removeFromParent();
+      list.splice(list.indexOf(old), 1);
+      old.traverse((o) => {
+        if (o instanceof THREE.Mesh && !o.geometry.userData.shared) o.geometry.dispose();
+      });
+    }
   }
 
   /** Meat-and-bone caps on both sides of a severed joint. */
@@ -186,17 +246,29 @@ export class BossMesh {
   }
 
   dispose(): void {
-    this.geoms.forEach((g) => g.dispose());
+    this.setXray(false);
     this.face.dispose();
-    for (const list of this.decals.values()) {
-      for (const d of list) {
-        d.traverse((o) => {
-          if (o instanceof THREE.Mesh) o.geometry.dispose();
-        });
-      }
+    const geos = new Set<THREE.BufferGeometry>(this.geoms);
+    const mats = new Set<THREE.Material>(Object.values(this.materials));
+    for (const grp of this.parts.values()) {
+      grp.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        if (!o.geometry.userData.shared) geos.add(o.geometry);
+        for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (!m.userData.shared) mats.add(m);
+      });
     }
-    Object.values(this.materials).forEach((mat) => mat.dispose());
+    geos.forEach((g) => g.dispose());
+    mats.forEach((m) => m.dispose());
   }
+}
+
+function isSkeleton(o: THREE.Object3D): boolean {
+  let p: THREE.Object3D | null = o;
+  while (p) {
+    if (p.name === 'xray') return true;
+    p = p.parent;
+  }
+  return false;
 }
 
 function capsuleFor(def: PartDef): THREE.CapsuleGeometry {

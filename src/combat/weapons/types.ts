@@ -7,9 +7,10 @@ import type { Effects } from '../../fx/Effects';
 import type { PhysicsWorld } from '../../physics/PhysicsWorld';
 import type { BodySync } from '../../core/BodySync';
 import type { CameraRig } from '../../core/CameraRig';
+import type { ViewModel } from './ViewModel';
 
 export type WeaponCategory = 'blunt' | 'sharp' | 'gun' | 'explosive' | 'elemental' | 'drop';
-export type Archetype = 'melee' | 'thrown' | 'hitscan' | 'projectile' | 'explosive' | 'spray' | 'drop' | 'saw';
+export type Archetype = 'melee' | 'thrown' | 'hitscan' | 'projectile' | 'spray' | 'saw';
 
 export interface WeaponDef {
   id: string;
@@ -32,8 +33,10 @@ export interface WeaponDef {
   loop?: LoopName;
   /** Comic words that may pop on hit. */
   words?: string[];
-  /** Builds the visual model (weapon-local, pointing down −Z, handle at origin). */
+  /** Builds the visual model (grip at origin, pointing along +Z). */
   model: () => THREE.Object3D;
+  /** Visual for the fired projectile, if different from the weapon itself. */
+  projectile?: () => THREE.Object3D;
   /** Archetype tuning. */
   opts?: {
     swing?: 'overhead' | 'side' | 'jab' | 'stab';
@@ -50,6 +53,15 @@ export interface WeaponDef {
     count?: number;
     size?: number;
     tint?: number;
+    /** Thrown: spawn above the target and let it fall. */
+    drop?: boolean;
+    /** Projectile spin (rad/s) around its local X axis. */
+    spin?: number;
+    /** Gravity multiplier for swept projectiles. */
+    gravity?: number;
+    /** Collider shape for physical throwables. */
+    shape?: 'box' | 'ball';
+    half?: [number, number, number];
   };
 }
 
@@ -81,6 +93,9 @@ export interface WeaponCtx {
   /** Map a collider handle to a live boss part. */
   partForCollider(handle: number): PartName | null;
   hitstop(seconds: number): void;
+  viewModel: ViewModel;
+  /** Current world time (seconds, slow-mo scaled). */
+  now(): number;
 }
 
 export interface WeaponBehavior {

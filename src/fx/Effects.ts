@@ -24,6 +24,19 @@ interface Spurt {
   acc: number;
 }
 
+interface Tracer {
+  line: THREE.Line;
+  age: number;
+  life: number;
+}
+
+interface Blast {
+  mesh: THREE.Mesh;
+  age: number;
+  life: number;
+  radius: number;
+}
+
 interface Ring {
   mesh: THREE.Mesh;
   age: number;
@@ -116,6 +129,12 @@ export class Effects {
   private dizzyTarget: THREE.Object3D | null = null;
   private dizzyAmount = 0;
   private time = 0;
+  private tracers: Tracer[] = [];
+  private blasts: Blast[] = [];
+  /** A single always-present light for muzzle/explosion flashes (adding lights recompiles shaders). */
+  private flashLight = new THREE.PointLight(0xffc870, 0, 8, 1.5);
+  private flashT = 0;
+  private flashPeak = 0;
 
   constructor() {
     const basic = (color = 0xffffff) => new THREE.MeshBasicMaterial({ color });
@@ -124,11 +143,12 @@ export class Effects {
       count: 200,
       material: new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.75, depthWrite: false }),
       bounce: 0.1,
+      curve: 'puff',
     });
     this.blood = new ParticlePool({
       count: 900,
       material: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25, metalness: 0 }),
-      onCollide: (p, n, c, s) => this.splat(p, n, c, s * 5.5),
+      onCollide: (p, n, c, s) => this.splat(p, n, c, s * 3.2),
     });
     this.debris = new ParticlePool({
       count: 300,
@@ -138,8 +158,9 @@ export class Effects {
     });
     this.smoke = new ParticlePool({
       count: 250,
-      material: new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false }),
+      material: new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false }),
       bounce: 0,
+      curve: 'puff',
     });
     this.fire = new ParticlePool({
       count: 400,
@@ -148,11 +169,15 @@ export class Effects {
     });
     this.ice = new ParticlePool({
       count: 250,
-      material: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.85 }),
+      material: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1, metalness: 0, emissive: 0x3d7fa6, transparent: true, opacity: 0.9 }),
       geometry: new THREE.OctahedronGeometry(1, 0),
       bounce: 0.3,
     });
-    for (const p of [this.sparks, this.dust, this.blood, this.debris, this.smoke, this.fire, this.ice]) this.group.add(p.mesh);
+    for (const p of [this.sparks, this.dust, this.blood, this.debris, this.smoke, this.fire, this.ice]) {
+      this.group.add(p.mesh);
+      // No ink outlines on particles: they turn soft puffs into dark blobs.
+      (p.mesh.material as THREE.Material).userData.outlineParameters = { visible: false };
+    }
 
     const splatGeo = new THREE.CircleGeometry(1, 14);
     // Wobbly cartoon splat edge.
@@ -167,6 +192,7 @@ export class Effects {
       this.splatCount,
     );
     this.splats.frustumCulled = false;
+    (this.splats.material as THREE.Material).userData.outlineParameters = { visible: false };
     this.splats.receiveShadow = true;
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
     for (let i = 0; i < this.splatCount; i++) {
@@ -175,6 +201,7 @@ export class Effects {
     }
     this.group.add(this.splats);
 
+    this.group.add(this.flashLight);
     for (let i = 0; i < 4; i++) {
       const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.starTex, transparent: true, depthWrite: false }));
       s.scale.setScalar(0.12);
@@ -196,7 +223,7 @@ export class Effects {
       this.stars(point, Math.min(12, 3 + amount * 0.3));
       return;
     }
-    const n = Math.min(60, Math.round(4 + amount * 1.1));
+    const n = Math.min(45, Math.round(3 + amount * 0.8));
     for (let i = 0; i < n; i++) {
       const v = dir
         .clone()
@@ -295,6 +322,7 @@ export class Effects {
       new THREE.RingGeometry(0.8, 1, 32),
       new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false }),
     );
+    mesh.material.userData.outlineParameters = { visible: false };
     mesh.position.copy(point).addScaledVector(normal, 0.02);
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
     mesh.scale.setScalar(0.01);
@@ -316,6 +344,60 @@ export class Effects {
     sprite.material.rotation = (Math.random() - 0.5) * 0.4;
     this.group.add(sprite);
     this.words.push({ sprite, age: 0, life: 0.75, vel: new THREE.Vector3(0, 0.6, 0) });
+  }
+
+  /** Brief burst of light (muzzle flash, explosion). */
+  flash(point: THREE.Vector3, color: number, intensity: number, seconds = 0.08): void {
+    this.flashLight.position.copy(point);
+    this.flashLight.color.setHex(color);
+    this.flashPeak = intensity;
+    this.flashT = seconds;
+    this.flashLight.userData.life = seconds;
+  }
+
+  tracer(from: THREE.Vector3, to: THREE.Vector3, color = 0xfff3b0, life = 0.07): void {
+    const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 }));
+    this.group.add(line);
+    this.tracers.push({ line, age: 0, life });
+  }
+
+  /** Jagged electric arc between two points (lives one frame unless refreshed). */
+  arc(from: THREE.Vector3, to: THREE.Vector3, color = 0x9be7ff): void {
+    const pts: THREE.Vector3[] = [];
+    const n = 10;
+    const len = from.distanceTo(to);
+    for (let i = 0; i <= n; i++) {
+      const p = from.clone().lerp(to, i / n);
+      if (i > 0 && i < n) p.add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(len * 0.12));
+      pts.push(p);
+    }
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 1 }));
+    this.group.add(line);
+    this.tracers.push({ line, age: 0, life: 0.05 });
+  }
+
+  /** Cartoon fireball: expanding glowing sphere + fire, smoke and debris. */
+  explosion(point: THREE.Vector3, radius: number): void {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 20, 14),
+      new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.95, depthWrite: false }),
+    );
+    mesh.material.userData.outlineParameters = { visible: false };
+    mesh.position.copy(point);
+    mesh.scale.setScalar(0.05);
+    this.group.add(mesh);
+    this.blasts.push({ mesh, age: 0, life: 0.45, radius });
+    for (let i = 0; i < 60; i++) {
+      const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8 - 0.1, Math.random() - 0.5).normalize().multiplyScalar(2 + Math.random() * radius * 3);
+      this.flame(point.clone(), v);
+    }
+    this.smokePuff(point, 16, 0x3a3a3a, 0.25);
+    this.debrisBurst(point, new THREE.Vector3(0, 1, 0), 0x333333, 16, 0.04);
+    this.sparks.burst(40, point, new THREE.Vector3(0, 1, 0), 1, [4, 11], { life: 0.6, size: 0.015, sizeEnd: 0.003, color: 0xffd166, gravity: 6, drag: 1, stretch: 0.03 });
+    this.flash(point, 0xffb347, 60, 0.25);
+    if (point.y < 0.6) this.shockRing(new THREE.Vector3(point.x, 0.02, point.z), new THREE.Vector3(0, 1, 0), radius * 1.4, 0xffe8b0);
   }
 
   setDizzy(target: THREE.Object3D | null, amount: number): void {
@@ -371,6 +453,40 @@ export class Effects {
       this.group.remove(r.mesh);
       r.mesh.geometry.dispose();
       (r.mesh.material as THREE.Material).dispose();
+      return false;
+    });
+
+    if (this.flashT > 0) {
+      this.flashT -= dt;
+      const life = (this.flashLight.userData.life as number) || 0.08;
+      this.flashLight.intensity = Math.max(0, this.flashPeak * (this.flashT / life));
+    } else this.flashLight.intensity = 0;
+
+    for (const t of this.tracers) {
+      t.age += dt;
+      (t.line.material as THREE.LineBasicMaterial).opacity = Math.max(0, 1 - t.age / t.life);
+    }
+    this.tracers = this.tracers.filter((t) => {
+      if (t.age < t.life) return true;
+      this.group.remove(t.line);
+      t.line.geometry.dispose();
+      (t.line.material as THREE.Material).dispose();
+      return false;
+    });
+
+    for (const b of this.blasts) {
+      b.age += dt;
+      const k = b.age / b.life;
+      b.mesh.scale.setScalar(b.radius * 0.7 * Math.sqrt(k) + 0.05);
+      const m = b.mesh.material as THREE.MeshBasicMaterial;
+      m.opacity = 0.95 * (1 - k);
+      m.color.setHex(k < 0.3 ? 0xfff1b5 : k < 0.6 ? 0xffb347 : 0xff6b35);
+    }
+    this.blasts = this.blasts.filter((b) => {
+      if (b.age < b.life) return true;
+      this.group.remove(b.mesh);
+      b.mesh.geometry.dispose();
+      (b.mesh.material as THREE.Material).dispose();
       return false;
     });
 

@@ -29,7 +29,7 @@ export const SEVER_MULT: Record<DamageType, number> = {
   blunt: 0,
   sharp: 1,
   pierce: 0.25,
-  explosive: 0.8,
+  explosive: 0.5,
   fire: 0,
   electric: 0,
   cold: 0,
@@ -59,7 +59,7 @@ export class DamageSystem {
     // Detached pieces take cosmetic damage only.
     const vital = state.attached ? state.def.vital : 0;
     const headshot = hit.part === 'head' && hit.type === 'pierce' ? 1.8 : 1;
-    const dealt = amount * HP_MULT[hit.type] * vital * headshot;
+    const dealt = amount * HP_MULT[hit.type] * vital * headshot * (hit.hpScale ?? 1);
     result.dealt = dealt;
     this.partDamage.set(hit.part, (this.partDamage.get(hit.part) ?? 0) + amount);
 

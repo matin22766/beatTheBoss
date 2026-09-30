@@ -24,6 +24,8 @@ export interface HitInfo {
   impulse: number;
   /** Source label, e.g. weapon id or "wall". */
   source: string;
+  /** Scales the HP loss (explosions hit every part at once, so each part counts for less). */
+  hpScale?: number;
 }
 
 export interface HitResult {

@@ -1,13 +1,31 @@
 import type { Aim, WeaponBehavior, WeaponCtx, WeaponDef } from './types';
 import { Melee } from './archetypes/Melee';
+import { Hitscan } from './archetypes/Hitscan';
+import { Projectile } from './archetypes/Projectile';
+import { Thrown } from './archetypes/Thrown';
+import { Spray } from './archetypes/Spray';
+import { Saw } from './archetypes/Saw';
 
 function create(def: WeaponDef, ctx: WeaponCtx): WeaponBehavior {
   switch (def.archetype) {
     case 'melee':
       return new Melee(def, ctx);
-    default:
-      throw new Error(`Archetype ${def.archetype} not implemented`);
+    case 'hitscan':
+      return new Hitscan(def, ctx);
+    case 'projectile':
+      return new Projectile(def, ctx);
+    case 'thrown':
+      return new Thrown(def, ctx);
+    case 'spray':
+      return new Spray(def, ctx);
+    case 'saw':
+      return new Saw(def, ctx);
   }
+}
+
+/** Weapons that are held on screen (guns, sprays, throwables) rather than appearing in the world. */
+export function usesViewModel(def: WeaponDef): boolean {
+  return def.archetype !== 'melee' && def.archetype !== 'saw' && !def.opts?.drop;
 }
 
 /** Owns one behaviour instance per weapon (so in-flight projectiles survive switching). */
@@ -35,6 +53,7 @@ export class WeaponSystem {
   select(def: WeaponDef): void {
     if (this.holding) this.up();
     this.current = def;
+    this.ctx.viewModel.show(usesViewModel(def) ? def : null);
   }
 
   down(aim: Aim): void {

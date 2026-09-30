@@ -4,13 +4,15 @@ import { chromium } from 'playwright-core';
 import { mkdirSync, existsSync } from 'node:fs';
 
 const url = process.argv[2] ?? 'http://localhost:5173/?debug';
+// SMOKE=basic,weapons,deaths (default: all). The software renderer is slow, so run sections separately.
+const sections = new Set((process.env.SMOKE ?? 'basic,weapons,deaths').split(','));
 const out = 'smoke-out';
 mkdirSync(out, { recursive: true });
 const exe = ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome', '/opt/pw-browsers/chromium'].find((p) => existsSync(p));
 
 const browser = await chromium.launch({
   executablePath: exe,
-  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'],
+  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required', '--disable-background-networking', '--disable-component-update'],
 });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const errors = [];
@@ -20,6 +22,16 @@ page.on('console', (m) => {
 });
 page.on('pageerror', (e) => errors.push(String(e)));
 
+// Wait for in-game seconds (the headless software renderer runs at a few FPS).
+const waitGame = async (seconds) => {
+  const start = await page.evaluate(() => window.__game.time);
+  const deadline = Date.now() + 30000;
+  while (Date.now() < deadline) {
+    await wait(150);
+    const now = await page.evaluate(() => window.__game.time);
+    if (now - start >= seconds) return;
+  }
+};
 const shot = (name) => page.screenshot({ path: `${out}/${name}.png` });
 const wait = (ms) => page.waitForTimeout(ms);
 
@@ -38,6 +50,7 @@ const partXY = (part) =>
     return s;
   }, part);
 
+if (sections.has('basic')) {
 // Punch the head a few times.
 for (let i = 0; i < 6; i++) {
   const { x, y } = await partXY('head');
@@ -64,13 +77,55 @@ await page.mouse.up({ button: 'right' });
 await wait(1200);
 await shot('04-thrown');
 
+}
+
+// ---- Every weapon: select, aim at the chest, fire/hold, check it did something ----
+if (sections.has('weapons')) {
+const only = process.env.WEAPONS ? process.env.WEAPONS.split(',') : null;
+const weaponIds = (await page.evaluate(() => window.__game.weaponBar.visible().map((w) => w.id))).filter((id) => !only || only.includes(id));
+const results = {};
+for (const id of weaponIds) {
+  await page.evaluate(() => window.__game.spawnBoss());
+  await waitGame(1);
+  await page.evaluate((wid) => {
+    const g = window.__game;
+    g.selectWeapon(g.weaponBar.visible().find((w) => w.id === wid));
+  }, id);
+  const before = await page.evaluate(() => window.__game.boss.damage.hp);
+  const p = await partXY('chest');
+  await page.mouse.move(p.x, p.y);
+  await page.mouse.down();
+  await waitGame(['grenade', 'dynamite', 'anvil', 'bowling', 'rocket'].includes(id) ? 0.1 : 0.9);
+  await page.mouse.up();
+  // Fuses, falling anvils and slow projectiles need time to land.
+  await waitGame(['grenade', 'dynamite', 'anvil', 'bowling', 'rocket', 'cleaver', 'knives', 'crossbow', 'brick'].includes(id) ? 3.2 : 0.5);
+  const after = await page.evaluate(() => (window.__game.boss ? window.__game.boss.damage.hp : 0));
+  results[id] = Math.round(before - after);
+  if (['katana', 'shotgun', 'rocket', 'flamethrower', 'taser', 'freezeray', 'chainsaw', 'dynamite', 'anvil'].includes(id)) await shot(`w-${id}`);
+}
+console.log('weapon damage', JSON.stringify(results));
+const dud = Object.entries(results).filter(([, d]) => d <= 0).map(([k]) => k);
+if (dud.length) errors.push('weapons dealt no damage: ' + dud.join(', '));
+}
+
+// ---- Every death style ----
+if (sections.has('deaths'))
+for (const style of ['crumple', 'dismember', 'decapitate', 'shatter', 'charcoal', 'xray', 'flatten', 'orbit']) {
+  await page.evaluate(() => window.__game.spawnBoss());
+  await waitGame(1);
+  await page.evaluate((st) => window.__game.debugKill(st), style);
+  await waitGame(style === 'shatter' || style === 'charcoal' ? 1.1 : style === 'orbit' ? 0.5 : 0.35);
+  await shot(`d-${style}`);
+  await waitGame(4.5);
+  const respawned = await page.evaluate(() => !window.__game.boss.dead);
+  if (!respawned) errors.push(`no respawn after ${style}`);
+}
+
 const state = await page.evaluate(() => {
   const g = window.__game;
   return { hp: g.boss.damage.hp, coins: g.economy.coins, dead: g.boss.dead };
 });
 console.log('state', JSON.stringify(state));
-await wait(2000);
-await shot('05-after');
 
 await browser.close();
 if (errors.length) {

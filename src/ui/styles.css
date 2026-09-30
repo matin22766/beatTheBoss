@@ -233,9 +233,9 @@ button {
 .weapons {
   position: absolute;
   left: 50%;
-  bottom: 14px;
+  bottom: 12px;
   transform: translateX(-50%);
-  max-width: calc(100vw - 32px);
+  max-width: min(1100px, calc(100vw - 340px));
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -276,8 +276,8 @@ button {
 
 .weapon {
   flex: 0 0 auto;
-  width: 74px;
-  height: 74px;
+  width: 62px;
+  height: 62px;
   border-radius: 14px;
   border: 2px solid transparent;
   background: #262835;
@@ -295,15 +295,15 @@ button {
 }
 
 .weapon .ico {
-  font-size: 30px;
+  font-size: 24px;
   line-height: 1;
 }
 
 .weapon .nm {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--muted);
-  max-width: 68px;
+  max-width: 58px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

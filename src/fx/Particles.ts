@@ -22,6 +22,8 @@ export interface ParticleOptions {
   onCollide?: (pos: THREE.Vector3, normal: THREE.Vector3, color: THREE.Color, size: number) => void;
   /** Bounce instead of dying on collision (debris). */
   bounce?: number;
+  /** 'puff' = grow toward sizeEnd then shrink to nothing (smoke/dust). */
+  curve?: 'linear' | 'puff';
 }
 
 const _m = new THREE.Matrix4();
@@ -155,7 +157,10 @@ export class ParticlePool {
         hit = true;
       }
       const t = 1 - this.life[i] / this.maxLife[i];
-      const size = this.size0[i] + (this.size1[i] - this.size0[i]) * t;
+      const size =
+        this.opts.curve === 'puff'
+          ? (this.size0[i] + (this.size1[i] - this.size0[i]) * Math.min(1, t * 2.5)) * Math.min(1, (1 - t) * 2.2)
+          : this.size0[i] + (this.size1[i] - this.size0[i]) * t;
       if (hit) {
         if (this.opts.bounce !== undefined) {
           const vn = vel[o] * _n.x + vel[o + 1] * _n.y + vel[o + 2] * _n.z;
