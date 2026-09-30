@@ -98,9 +98,12 @@ Screenshots are written to `smoke-out/`.
 
 ## Deploying to GitHub Pages
 
-`.github/workflows/deploy.yml` builds and publishes the site on every push to `main`, or manually
-from the Actions tab. One-time setup: **Settings → Pages → Build and deployment → Source: GitHub
-Actions**. The build uses relative paths, so it works at `https://<user>.github.io/<repo>/`.
+Live at **https://matin22766.github.io/beatTheBoss/**.
+
+`.github/workflows/deploy.yml` runs on every push to `main` (or manually from the Actions tab). It
+checks and builds the game, then publishes `dist/` to the `gh-pages` branch, which Pages serves.
+If Pages ever shows a 404, check Settings → Pages → Deploy from a branch → `gh-pages` / root.
+The build uses relative paths, so it works under any sub-path.
 
 ## Tech
 
