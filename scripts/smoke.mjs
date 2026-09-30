@@ -5,7 +5,7 @@ import { mkdirSync, existsSync } from 'node:fs';
 
 const url = process.argv[2] ?? 'http://localhost:5173/?debug';
 // SMOKE=basic,weapons,deaths (default: all). The software renderer is slow, so run sections separately.
-const sections = new Set((process.env.SMOKE ?? 'basic,bullettime,camera,props,weapons,deaths,face,shop,themes').split(','));
+const sections = new Set((process.env.SMOKE ?? 'basic,bullettime,camera,props,brain,dodge,weapons,deaths,face,shop,themes').split(','));
 const out = 'smoke-out';
 mkdirSync(out, { recursive: true });
 const exe = ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome', '/opt/pw-browsers/chromium'].find((p) => existsSync(p));
@@ -41,6 +41,11 @@ await page.goto(url);
 await page.waitForSelector('.start .btn:not([disabled])', { timeout: 60000 });
 await shot('00-start');
 await page.click('.start .btn');
+// Deterministic by default: no dodging unless a section asks for it.
+await page.evaluate(() => {
+  window.__game.dodgeScale = 0;
+  window.__game.boss.brain.dodgeScale = 0;
+});
 await wait(2500);
 await shot('01-idle');
 
@@ -149,7 +154,7 @@ if (sections.has('props')) {
   // Slam a chair into the wall until it breaks.
   const broke = await page.evaluate(async () => {
     const g = window.__game;
-    const chair = g.props.props.find((p) => p.spec.seat === 0.04);
+    const chair = g.props.props.find((p) => p.spec.seat === 0.25 && p.spec.mass === 12);
     for (let i = 0; i < 8 && !chair.broken; i++) {
       chair.body.setLinvel({ x: -14, y: 2, z: 0 }, true);
       await new Promise((r) => setTimeout(r, 900));
@@ -158,6 +163,60 @@ if (sections.has('props')) {
   });
   await shot('p-chair');
   if (!broke) errors.push('chair never broke');
+}
+
+// ---- The boss's brain: sit on a chair, then dance and take a call ----
+if (sections.has('brain')) {
+  await page.evaluate(() => window.__game.setTheme(window.__themes[0]));
+  await waitGame(1.5);
+  await page.evaluate(() => window.__game.boss.brain['start']('sit'));
+  await waitGame(9);
+  const sat = await page.evaluate(() => window.__game.boss.brain.state);
+  await shot('b-sit');
+  if (sat !== 'sitting') errors.push('boss never sat down, state=' + sat);
+  // Throw the chair with him on it.
+  await page.evaluate(() => {
+    const g = window.__game;
+    const chair = g.props.props.find((p) => p.spec.seat === 0.25 && p.spec.mass === 12);
+    chair.body.setLinvel({ x: 4, y: 5, z: 1 }, true);
+  });
+  await waitGame(0.6);
+  await shot('b-chair-throw');
+  await page.evaluate(() => {
+    const b = window.__game.boss.brain;
+    b.interrupt();
+    b['start']('dance');
+  });
+  await waitGame(2);
+  await shot('b-dance');
+  await page.evaluate(() => window.__game.boss.brain['start']('phone'));
+  await waitGame(2);
+  await shot('b-phone');
+  await page.evaluate(() => window.__game.boss.brain['start']('wander'));
+  await waitGame(4);
+  await shot('b-wander');
+}
+
+// ---- Dodging: with a 100% dodge chance, punches whiff ----
+if (sections.has('dodge')) {
+  await page.evaluate(() => {
+    const g = window.__game;
+    g.dodgeScale = 100;
+    g.spawnBoss();
+  });
+  await waitGame(3);
+  const hp0 = await page.evaluate(() => window.__game.boss.damage.hp);
+  const { x, y } = await partXY('head');
+  await page.mouse.click(x, y);
+  await waitGame(0.3);
+  await shot('d-dodge');
+  const hp1 = await page.evaluate(() => window.__game.boss.damage.hp);
+  if (hp1 !== hp0) errors.push(`dodge failed: hp ${hp0} → ${hp1}`);
+  await page.evaluate(() => {
+    const g = window.__game;
+    g.dodgeScale = 0;
+    g.boss.brain.dodgeScale = 0;
+  });
 }
 
 // ---- Every weapon: select, aim at the chest, fire/hold, check it did something ----

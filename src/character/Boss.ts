@@ -12,6 +12,9 @@ import { audio } from '../audio/AudioEngine';
 import { pickDeathStyle } from '../death/pickDeathStyle';
 import type { FaceProfile } from '../face/FaceProfile';
 import { PhotoFace } from '../face/PhotoFace';
+import { BossBrain, type BrainHost, type Seat } from './BossBrain';
+import type { PropSystem } from '../props/PropSystem';
+import { RAPIER } from '../physics/PhysicsWorld';
 import { Injuries, injuryFor } from '../gore/Injuries';
 import { PART_NAMES } from './RagdollDef';
 
@@ -33,7 +36,12 @@ export class Boss {
   private sinceHit = 10;
   private painLevel = 0;
   private gruntCooldown = 0;
-  private tauntTimer = 6;
+  readonly brain: BossBrain;
+  /** Furniture he can sit on (set by the game). */
+  seats: PropSystem | null = null;
+  private weldJoint: RAPIER.ImpulseJoint | null = null;
+  private weldSeat: Seat | null = null;
+  private readonly physics: PhysicsWorld;
 
   constructor(
     physics: PhysicsWorld,
@@ -54,7 +62,9 @@ export class Boss {
     this.mesh.addTo(scene);
     for (const [name, part] of this.ragdoll.parts) this.sync.add(part.body, this.mesh.parts.get(name)!);
     this.damage = new DamageSystem(this.ragdoll);
+    this.physics = physics;
     this.ragdoll.onStep = () => audio.play('step', { intensity: 0.2 });
+    this.brain = new BossBrain(this.brainHost());
     this.injuries = new Injuries(this.mesh, this.ragdoll, fx);
     // Pop in with a puff of smoke.
     for (const g of this.mesh.parts.values()) g.scale.setScalar(0.01);
@@ -114,6 +124,7 @@ export class Boss {
     // Reactions.
     this.sinceHit = 0;
     this.painLevel = Math.min(1, this.painLevel + result.dealt / 25 + 0.25);
+    if (!this.dead && result.dealt > 2) this.brain.onHit(info.point.clone().addScaledVector(info.dir, -2));
     if (!this.dead) {
       this.ragdoll.stagger(Math.min(0.9, result.dealt / 45 + info.impulse / 300));
       if (result.dealt > 3) this.ragdoll.setPose(Math.random() < 0.5 ? 'hurt' : 'cower', 0.12, 0.5);
@@ -248,14 +259,8 @@ export class Boss {
         dead: false,
       };
       this.fx.setDizzy(this.mesh.parts.get('head')!, dizzy);
-      this.tauntTimer -= dt;
-      if (this.tauntTimer <= 0) {
-        this.tauntTimer = 7 + Math.random() * 6;
-        if (this.sinceHit > 4 && r.isStanding()) {
-          r.setPose('taunt', 0.3, 1.6);
-          audio.play('boing', { intensity: 0.3, pitch: 0.8 });
-        }
-      }
+      this.brain.update(dt);
+      this.checkWeld();
     } else {
       this.fx.setDizzy(null, 0);
     }
@@ -278,7 +283,117 @@ export class Boss {
     return this.mesh.parts.get('head')!.getWorldPosition(out);
   }
 
+  // ---------------------------------------------------------------- brain wiring
+
+  private brainHost(): BrainHost {
+    const r = this.ragdoll;
+    return {
+      canAct: () =>
+        !this.dead &&
+        !this.frozenSolid &&
+        this.status.frost < 0.85 &&
+        this.status.shock < 0.2 &&
+        r.strength > 0.55 &&
+        !r.grabbed &&
+        !r.isGettingUp &&
+        (this.weldJoint !== null || r.isStanding()),
+      position: () => r.position('pelvis'),
+      walkTo: (x, z, speed) => r.walkTo(x, z, speed),
+      stopWalking: () => (r.walkTarget = null),
+      isWalking: () => r.walking,
+      setPose: (p, blend, hold) => r.setPose(p, blend, hold),
+      setLookYaw: (y) => (r.lookYaw = y),
+      setHeightOffset: (h) => (r.heightOffset = h),
+      sidestep: (dv) => {
+        for (const p of r.parts.values()) if (p.attached) p.body.applyImpulse({ x: dv.x * p.def.mass, y: 0.4 * p.def.mass, z: dv.z * p.def.mass }, true);
+      },
+      findSeat: () => this.findSeat(),
+      weld: (seat) => this.weld(seat),
+      unweld: () => this.unweld(),
+      welded: () => this.weldJoint !== null,
+      say: (k) => this.say(k),
+      rand: Math.random,
+    };
+  }
+
+  private findSeat(): Seat | null {
+    const prop = this.seats?.nearestSeat(this.ragdoll.position('pelvis'));
+    if (!prop || prop.spec.seat === undefined) return null;
+    const seatH = prop.spec.seat;
+    const rot = () => {
+      const q = prop.body.rotation();
+      return new THREE.Quaternion(q.x, q.y, q.z, q.w);
+    };
+    return {
+      id: prop.spec.id,
+      point: () => {
+        const t = prop.body.translation();
+        return new THREE.Vector3(0, seatH, 0).applyQuaternion(rot()).add(new THREE.Vector3(t.x, t.y, t.z));
+      },
+      yaw: () => {
+        const f = new THREE.Vector3(0, 0, 1).applyQuaternion(rot());
+        return Math.atan2(f.x, f.z);
+      },
+      // Only sit on things that are upright and intact.
+      valid: () => !prop.broken && prop.body.isValid() && new THREE.Vector3(0, 1, 0).applyQuaternion(rot()).y > (this.weldJoint ? 0.5 : 0.8),
+    };
+  }
+
+  /** Sit down: a stiff spring from the pelvis to the seat, so dragging the chair drags him too. */
+  private weld(seat: Seat): boolean {
+    const prop = this.seats?.props.find((p) => p.spec.id === seat.id);
+    if (!prop || !seat.valid()) return false;
+    this.unweld();
+    const pelvis = this.ragdoll.get('pelvis').body;
+    const m = this.ragdoll.totalAttachedMass();
+    const data = RAPIER.JointData.spring(0, m * 45, m * 10, { x: 0, y: 0, z: 0 }, { x: 0, y: (prop.spec.seat ?? 0) + 0.12, z: 0 });
+    this.weldJoint = this.physics.world.createImpulseJoint(data, pelvis, prop.body, true);
+    this.weldSeat = seat;
+    this.ragdoll.heightOffset = seat.point().y + 0.12 - 0.995;
+    audio.play('thunk', { intensity: 0.4, pitch: 0.8 });
+    return true;
+  }
+
+  private unweld(): void {
+    if (this.weldJoint && this.weldJoint.isValid()) this.physics.world.removeImpulseJoint(this.weldJoint, true);
+    this.weldJoint = null;
+    this.weldSeat = null;
+    this.ragdoll.heightOffset = 0;
+  }
+
+  /** Let go of the seat if it broke, fell over or ended up far away. */
+  private checkWeld(): void {
+    if (!this.weldJoint || !this.weldSeat) return;
+    const far = this.weldSeat.valid() ? this.weldSeat.point().distanceTo(this.ragdoll.position('pelvis')) > 1.6 : true;
+    if (far || !this.weldJoint.isValid()) this.brain.interrupt();
+  }
+
+  private say(kind: 'babble' | 'hum' | 'miss' | 'taunt' | 'yawn'): void {
+    const head = this.headPosition();
+    switch (kind) {
+      case 'babble':
+        audio.play('babble', { intensity: 0.4 });
+        if (Math.random() < 0.4) this.fx.word(['BLA BLA', 'SYNERGY!', 'Q3 TARGETS!', 'CIRCLE BACK'][Math.floor(Math.random() * 4)], head, '#ffffff', 0.35);
+        break;
+      case 'hum':
+        audio.play('hum', { intensity: 0.4 });
+        break;
+      case 'yawn':
+        audio.play('yawn', { intensity: 0.5 });
+        break;
+      case 'miss':
+        audio.play('whoosh', { intensity: 0.8, pitch: 1.3 });
+        this.fx.word(['MISS!', 'DODGED!', 'NOPE!'][Math.floor(Math.random() * 3)], head, '#7fe0ff', 0.5);
+        break;
+      case 'taunt':
+        audio.play('boing', { intensity: 0.3, pitch: 0.8 });
+        this.fx.word(['TOO SLOW!', 'HA!', 'NICE TRY!', 'MISSED ME!'][Math.floor(Math.random() * 4)], head, '#ffcc33', 0.4);
+        break;
+    }
+  }
+
   dispose(): void {
+    this.unweld();
     for (const part of this.ragdoll.parts.values()) this.sync.removeBody(part.body);
     this.mesh.removeFrom(this.scene);
     this.mesh.dispose();

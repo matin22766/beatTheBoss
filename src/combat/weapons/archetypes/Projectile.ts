@@ -15,6 +15,8 @@ interface Shot {
   life: number;
   stuck: boolean;
   fade: number;
+  dodgeChecked: boolean;
+  ignoreBoss: boolean;
 }
 
 const _up = new THREE.Vector3(0, 0, 1);
@@ -72,7 +74,7 @@ export class Projectile implements WeaponBehavior {
       const dist = target.distanceTo(muzzle);
       const vel = dir.clone().multiplyScalar(speed);
       vel.y += (g * dist) / speed / 2;
-      this.shots.push({ obj, pos: muzzle.clone(), vel, spin: o.spin ?? 0, life: 6, stuck: false, fade: 0 });
+      this.shots.push({ obj, pos: muzzle.clone(), vel, spin: o.spin ?? 0, life: 6, stuck: false, fade: 0, dodgeChecked: false, ignoreBoss: false });
     }
     if (this.shots.length > 40) this.remove(this.shots[0]);
   }
@@ -100,7 +102,16 @@ export class Projectile implements WeaponBehavior {
       const len = seg.length();
       if (len < 1e-5) continue;
       const ray = new THREE.Ray(prev, seg.clone().multiplyScalar(1 / len));
-      const hit = this.ctx.raycastBoss(ray, len);
+      // Incoming! When it gets close he may sidestep.
+      const boss = this.ctx.boss();
+      if (!s.dodgeChecked && boss) {
+        const chest = boss.ragdoll.position('chest');
+        if (chest.distanceTo(s.pos) < 2.5 && s.vel.dot(chest.clone().sub(s.pos)) > 0) {
+          s.dodgeChecked = true;
+          s.ignoreBoss = this.ctx.tryDodge('projectile', s.vel.clone().normalize());
+        }
+      }
+      const hit = s.ignoreBoss ? null : this.ctx.raycastBoss(ray, len);
       const dir = ray.direction.clone();
       const prop = this.ctx.raycastProp(ray, len);
       if (prop && (!hit || prop.distance < hit.point.distanceTo(ray.origin))) {

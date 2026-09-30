@@ -54,11 +54,11 @@ export const office: ThemeDef = {
       place(props.monitor(), -3.1, 1.03, -2.35),
       place(props.mug(0xffffff), -3.9, 0.87, -2.1),
       place(props.mug(0xd62828), -2.6, 0.87, -2.0),
-      place(props.officeChair(), -3.2, 0.46, -1.4, 0.3),
+      place(props.officeChair(), -3.2, 0.25, -1.4, 0.3),
       place(props.filingCabinet(), 3.9, 0.65, -2.5),
       place(props.plantPot(), 4.4, 0.45, -1.4),
       place(props.waterCooler(), -4.6, 0.72, 0.6),
-      place(props.officeChair(), 2.6, 0.46, -1.9, -0.4),
+      place(props.officeChair(), 2.6, 0.25, -1.9, -0.4),
       // Window panes in front of the skyline.
       place(props.windowPane(1.36, 1.9), -3.13, 2.6, -2.9),
       place(props.windowPane(1.36, 1.9), -1.67, 2.6, -2.9),

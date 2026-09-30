@@ -167,7 +167,7 @@ export const space: ThemeDef = {
       place(props.console(), 4, 0.5, -2.4),
       place(props.crate(0.7), -2.6, 0.35, -2.5, 0.3),
       place(props.crate(0.5), 2.6, 0.25, 1.8),
-      place(props.chair(0x566170), 1.5, 0.46, -2.2, -0.3),
+      place(props.chair(0x566170), 1.5, 0.23, -2.2, -0.3),
       place(props.spaceWindow(), 0, 3, ROOM.back + 0.16),
     ];
     return {

@@ -81,6 +81,8 @@ export class Game {
   private timeScale = 1;
   private slowmoT = 0;
   private finisherScale = 1;
+  /** Multiplier on the boss's dodge chances (tests set 0 or a large value). */
+  dodgeScale = 1;
   /** Hold Shift for bullet time. */
   bulletTime = false;
   private bulletScale = 1;
@@ -162,6 +164,7 @@ export class Game {
       partForCollider: (h) => this.boss?.ragdoll.byCollider.get(h)?.def.name ?? null,
       hitstop: (s) => this.hitstop(s),
       props: this.props,
+      tryDodge: (kind, dir) => this.boss?.brain.tryDodge(kind, dir) ?? false,
       raycastProp: (ray, maxDist) => this.props.raycast(ray, maxDist),
       viewModel: (this.viewModel = new ViewModel(this.rig.camera)),
       now: () => this.time,
@@ -311,6 +314,8 @@ export class Game {
     this.deaths.reset();
     this.boss = new Boss(this.physics, this.scene, this.sync, this.events, this.fx, new THREE.Vector3(0, 0.02, 0), this.faceProfile);
     this.impactCooldown = 0;
+    this.boss.seats = this.props;
+    this.boss.brain.dodgeScale = this.dodgeScale;
     this.respawnT = -1;
     this.hud.setHp(1, false);
     this.events.emit('respawn', {});

@@ -98,6 +98,8 @@ export interface WeaponCtx {
   hitstop(seconds: number): void;
   viewModel: ViewModel;
   props: PropSystem;
+  /** Ask the boss to dodge an incoming attack; true = it will miss. */
+  tryDodge(kind: 'fist' | 'melee' | 'bullet' | 'projectile', dir: THREE.Vector3): boolean;
   /** Nearest of boss/prop along a ray (props block shots aimed through them). */
   raycastProp(ray: THREE.Ray, maxDist?: number): PropHit | null;
   /** Current world time (seconds, slow-mo scaled). */

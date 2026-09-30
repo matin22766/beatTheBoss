@@ -12,6 +12,8 @@ interface Swing {
   dir: THREE.Vector3;
   start: THREE.Vector3;
   end: THREE.Vector3;
+  /** The boss saw it coming. */
+  dodged: boolean;
 }
 
 const SWING_TIME = 0.1;
@@ -68,6 +70,7 @@ export class Melee implements WeaponBehavior {
       dir,
       start: hand.clone().addScaledVector(dir, -back),
       end: hand.clone().addScaledVector(dir, style === 'stab' ? 0.12 : 0.02),
+      dodged: !!aim.hit && this.ctx.tryDodge(this.def.id === 'fists' ? 'fist' : 'melee', dir),
     });
     audio.play('whoosh', { intensity: 0.4 + Math.min(0.6, this.def.impulse / 120) });
   }
@@ -124,7 +127,7 @@ export class Melee implements WeaponBehavior {
       this.ctx.rig.shake(0.1);
       return;
     }
-    if (!hit || hit.point.distanceTo(s.end) > 0.9) {
+    if (!hit || s.dodged || hit.point.distanceTo(s.end) > 0.9) {
       return;
     }
     const style = this.def.opts?.swing ?? 'overhead';

@@ -38,7 +38,10 @@ export type SoundName =
   | 'step'
   | 'metalHit'
   | 'woodBreak'
-  | 'splash';
+  | 'splash'
+  | 'babble'
+  | 'hum'
+  | 'yawn';
 
 interface AmbiencePreset {
   noise?: { type: BiquadFilterType; freq: number; q: number; level: number; lfoRate?: number; lfoDepth?: number };
@@ -416,6 +419,36 @@ export class AudioEngine {
       case 'kaching':
         this.noise(out, t, 0.08, 'highpass', 5000, 4000, 0.7, 0.8, 0.001);
         [2093, 2637, 3136].forEach((f, i) => this.tone(out, t + 0.05 + i * 0.05, 0.6, 'triangle', f, f, 0.18, 0.002));
+        break;
+      case 'babble': {
+        // Corporate gibberish: a burst of short formant syllables.
+        const vowels: Array<[[number, number], [number, number]]> = [
+          [[700, 650], [1200, 1100]],
+          [[400, 450], [2100, 1900]],
+          [[550, 500], [900, 850]],
+          [[300, 350], [870, 900]],
+        ];
+        let tt = t;
+        const base = rand(115, 140);
+        for (let i = 0; i < 5 + Math.floor(Math.random() * 4); i++) {
+          const v = vowels[Math.floor(Math.random() * vowels.length)];
+          const d = rand(0.07, 0.14);
+          this.voice(out, tt, d, base * rand(0.9, 1.25), base * rand(0.85, 1.1), v[0], v[1]);
+          tt += d + rand(0.01, 0.05);
+        }
+        break;
+      }
+      case 'hum': {
+        const notes = [0, 4, 7, 4, 9, 7];
+        const base = 130;
+        notes.forEach((n, i) => {
+          const f = base * Math.pow(2, n / 12);
+          this.voice(out, t + i * 0.16, 0.18, f, f, [300, 300], [900, 900]);
+        });
+        break;
+      }
+      case 'yawn':
+        this.voice(out, t, 1.1, 170, 95, [500, 750], [1000, 1150], 4);
         break;
       case 'metalHit':
         for (const [r, lvl] of [

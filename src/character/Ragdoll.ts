@@ -473,14 +473,15 @@ export class Ragdoll implements DamageTarget {
     const g = -this.physics.world.gravity.y;
     // No cheating in mid-air: all support needs something touching the floor.
     this.airTime = this.grounded() ? 0 : this.airTime + dt;
-    if (this.airTime > 0.15) {
+    if (this.airTime > (this.walkTarget ? 0.4 : 0.15)) {
       this.walkTarget = null;
       return;
     }
 
     // Knocked down: rise gradually through a get-up pose instead of levitating straight up.
     const height = t.y - this.home.y;
-    if (height < STAND_HEIGHT - 0.3 && !this.gettingUp && legs > 0) {
+    // (Sitting/ducking lower the target on purpose; only an unplanned drop counts as knocked down.)
+    if (height < STAND_HEIGHT + Math.min(0, this.heightOffset) - 0.3 && !this.gettingUp && legs > 0) {
       this.gettingUp = true;
       this.supportY = Math.max(0.15, height);
       this.walkTarget = null;

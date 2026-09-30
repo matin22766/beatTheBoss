@@ -34,13 +34,15 @@ export class Hitscan implements WeaponBehavior {
     this.ctx.fx.impactSparks(muzzle, aim.ray.direction.clone().negate(), 5, 0xffe29a);
     this.ctx.rig.shake(pellets > 1 ? 0.25 : 0.1);
 
+    // He might see the muzzle flash and lean out of the way.
+    const dodged = !!this.ctx.raycastBoss(aim.ray) && this.ctx.tryDodge('bullet', aim.ray.direction);
     for (let i = 0; i < pellets; i++) {
       const dir = aim.ray.direction
         .clone()
         .add(new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2).multiplyScalar(spread))
         .normalize();
       const ray = new THREE.Ray(aim.ray.origin.clone(), dir);
-      const hit = this.ctx.raycastBoss(ray);
+      const hit = dodged ? null : this.ctx.raycastBoss(ray);
       const prop = this.ctx.raycastProp(ray);
       if (prop && (!hit || prop.distance < hit.point.distanceTo(ray.origin))) {
         // Furniture in the way soaks the bullet.

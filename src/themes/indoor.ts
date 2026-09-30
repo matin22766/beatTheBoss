@@ -119,7 +119,7 @@ export const boxingRing: ThemeDef = {
       place(props.stool(), 3.8, 0.3, -2.0),
       place(props.bucket(), -3.3, 0.15, -2.3),
       place(props.bucket(), 3.3, 0.15, -2.3),
-      place(props.chair(0x1d4ed8), 3.9, 0.46, 1.8, -0.6),
+      place(props.chair(0x1d4ed8), 3.9, 0.23, 1.8, -0.6),
     ];
     return { group: g, colliders, props: propsList, background: new THREE.Color(0x0b0b12), fog: new THREE.Fog(0x0b0b12, 10, 22) };
   },
@@ -158,9 +158,9 @@ export const kitchen: ThemeDef = {
       place(props.pan(), -2.6, 1.02, -2.6),
       place(props.mug(0x2a9d8f), 0.2, 1.02, -2.55),
       place(props.diningTable(), -3.3, 0.39, 1),
-      place(props.chair(), -3.3, 0.46, 0.25),
-      place(props.chair(), -3.3, 0.46, 1.75, Math.PI),
-      place(props.chair(), -2.3, 0.46, 1, -Math.PI / 2),
+      place(props.chair(), -3.3, 0.23, 0.25),
+      place(props.chair(), -3.3, 0.23, 1.75, Math.PI),
+      place(props.chair(), -2.3, 0.23, 1, -Math.PI / 2),
     ];
     g.add(lightRig({ sky: 0xffffff, ground: 0x8a8f86, hemi: 1.2, key: 0xfffbf2, keyIntensity: 2.1 }));
     return { group: g, colliders, props: propsList, background: new THREE.Color(0xe9f3f1) };
@@ -188,7 +188,7 @@ export const lab: ThemeDef = {
       place(props.labBench(), -2.6, 0.47, -2.5),
       ...liquids.map((c, i) => place(props.flask(c), -3.8 + i * 0.7, 1.08, -2.5)),
       place(props.specimenTube(), 3.6, 1.7, -2.2),
-      place(props.chair(0x3a4450), -1.2, 0.46, -1.7, 0.5),
+      place(props.chair(0x3a4450), -1.2, 0.23, -1.7, 0.5),
       place(props.crate(0.6), 1.8, 0.3, -2.4),
     ];
     const warn = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.5), std(0xffffff, { map: tex.sign('⚠ DANGER', '#f2c230', '#111') }));

@@ -62,20 +62,21 @@ export const props = {
       },
     };
   },
+  /** Collider is the seat block (top = seat); the backrest is visual only. */
   officeChair(): PropKind {
     return {
-      shape: { kind: 'box', half: [0.25, 0.45, 0.25] },
+      shape: { kind: 'box', half: [0.25, 0.25, 0.25] },
       mass: 12,
       hp: 70,
       material: 'plastic',
-      seat: 0.04,
+      seat: 0.25,
       color: 0x2b2f3a,
       build: () => {
         const fabric = std(0x2b2f3a);
         const metal = std(0x777777, { metalness: 0.5 });
-        const g = group(b(0.5, 0.08, 0.5, fabric, 0, 0, 0), b(0.48, 0.52, 0.07, fabric, 0, 0.3, -0.22), c(0.03, 0.03, 0.35, metal, 0, -0.22, 0));
+        const g = group(b(0.5, 0.08, 0.5, fabric, 0, 0.21, 0), b(0.48, 0.52, 0.07, fabric, 0, 0.51, -0.22), c(0.03, 0.03, 0.35, metal, 0, -0.01, 0));
         for (let i = 0; i < 5; i++) {
-          const leg = b(0.04, 0.03, 0.28, metal, 0, -0.42, 0);
+          const leg = b(0.04, 0.03, 0.28, metal, 0, -0.21, 0);
           leg.rotation.y = (i / 5) * Math.PI * 2;
           leg.translateZ(0.12);
           g.add(leg);
@@ -273,24 +274,25 @@ export const props = {
       },
     };
   },
+  /** Collider is the seat block (top = seat); the backrest is visual only. */
   chair(color = 0x8b5a2b): PropKind {
     return {
-      shape: { kind: 'box', half: [0.22, 0.45, 0.22] },
+      shape: { kind: 'box', half: [0.22, 0.23, 0.22] },
       mass: 6,
       hp: 45,
       material: 'wood',
-      seat: 0.02,
+      seat: 0.23,
       color,
       build: () => {
         const w = std(color);
-        const g = group(b(0.44, 0.05, 0.44, w, 0, 0, 0), b(0.44, 0.45, 0.04, w, 0, 0.24, -0.2));
+        const g = group(b(0.44, 0.05, 0.44, w, 0, 0.205, 0), b(0.44, 0.45, 0.04, w, 0, 0.45, -0.2));
         for (const [x, z] of [
           [-0.19, -0.19],
           [0.19, -0.19],
           [-0.19, 0.19],
           [0.19, 0.19],
         ])
-          g.add(b(0.04, 0.44, 0.04, w, x, -0.23, z));
+          g.add(b(0.04, 0.44, 0.04, w, x, -0.02, z));
         return g;
       },
     };
@@ -458,7 +460,7 @@ export const props = {
       mass: 7,
       hp: 40,
       material: 'wood',
-      seat: 0.05,
+      seat: 0.25,
       color: 0xff6b6b,
       build: () => {
         const cloth = std(0xffffff, { map: tex.stripes('#ff6b6b', '#ffffff', [3, 1]) });
