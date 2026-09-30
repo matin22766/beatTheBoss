@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { Game } from './core/Game';
 import { audio } from './audio/AudioEngine';
 import { FaceModal } from './ui/FaceModal';
@@ -47,7 +48,7 @@ export async function startApp(canvas: HTMLCanvasElement, ui: HTMLElement): Prom
 
   const params = new URLSearchParams(location.search);
   if (import.meta.env.DEV || params.has('debug')) {
-    Object.assign(window, { __game: game, __faceModal: faceModal, __shop: shop, __themes: THEMES });
+    Object.assign(window, { __game: game, __faceModal: faceModal, __shop: shop, __themes: THEMES, __THREE: THREE });
   }
   return game;
 }

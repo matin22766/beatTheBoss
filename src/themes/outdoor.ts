@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { box, buildRoom, cyl, lightRig, std, type StaticBox, type ThemeDef } from './Theme';
 import { canvasTexture, tex } from './textures';
 import { ROOM } from '../physics/ArenaColliders';
+import { place, props } from '../props/propLib';
 
 const basic = (params: THREE.MeshBasicMaterialParameters) => {
   const m = new THREE.MeshBasicMaterial(params);
@@ -47,15 +48,6 @@ export const rooftop: ThemeDef = {
     g.add(backdrop(tex.skyline('#0b1026', '#2a1f4d', true)));
     // Parapet, AC units, water tower, neon sign, moon.
     g.add(box(10, 0.5, 0.2, std(0x5a5f6b), 0, 0.25, -2.95));
-    const ac = std(0xb8bec8, { metalness: 0.4, roughness: 0.5 });
-    for (const [x, z] of [
-      [-3.8, -2.2],
-      [-2.6, -2.3],
-    ]) {
-      g.add(box(1, 0.8, 0.8, ac, x, 0.4, z));
-      g.add(cyl(0.3, 0.3, 0.05, std(0x333333), x, 0.83, z));
-      colliders.push({ pos: [x, 0.4, z], half: [0.5, 0.4, 0.4] });
-    }
     const tower = new THREE.Group();
     tower.position.set(3.7, 0, -2.3);
     tower.add(cyl(0.7, 0.7, 1.3, std(0x6b4a33), 0, 2.2, 0), new THREE.Mesh(new THREE.ConeGeometry(0.8, 0.5, 16), std(0x3b2a1e)));
@@ -69,9 +61,6 @@ export const rooftop: ThemeDef = {
       tower.add(cyl(0.04, 0.04, 1.6, std(0x333333), x, 0.8, z));
     g.add(tower);
     colliders.push({ pos: [3.7, 1.5, -2.3], half: [0.7, 1.5, 0.7] });
-    const neon = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.7), basic({ map: tex.sign('OPEN 24/7', '#14051f', '#ff4fd8') }));
-    neon.position.set(-1.5, 2.6, -2.9);
-    g.add(neon);
     const moon = new THREE.Mesh(new THREE.CircleGeometry(0.9, 32), basic({ color: 0xfff6d8, fog: false }));
     moon.position.set(6, 8, ROOM.back - 5.9);
     g.add(moon);
@@ -79,9 +68,18 @@ export const rooftop: ThemeDef = {
     const pink = new THREE.PointLight(0xff4fd8, 8, 8, 1.4);
     pink.position.set(-1.5, 2.4, -2.2);
     g.add(pink);
+    const propsList = [
+      place(props.acUnit(), -3.8, 0.4, -2.2),
+      place(props.acUnit(), -2.6, 0.4, -2.3, 0.1),
+      place(props.neonSign('OPEN 24/7', '#ff4fd8'), -1.5, 2.6, -2.85),
+      place(props.crate(0.7), 2.4, 0.35, -2.4, 0.4),
+      place(props.barrel(0x3a3f4a), 1.5, 0.45, -2.5),
+      place(props.bucket(), 2.9, 0.15, 1.8),
+    ];
     return {
       group: g,
       colliders,
+      props: propsList,
       background: new THREE.Color(0x0b1026),
       update(_dt, t) {
         pink.intensity = 6 + Math.sin(t * 9) * 1.5 + (Math.sin(t * 23) > 0.95 ? -5 : 0);
@@ -125,21 +123,20 @@ export const beach: ThemeDef = {
     };
     palm(-4.2, -2.4, 0.8);
     palm(4.3, -1.8, -0.6);
-    const umbrella = new THREE.Group();
-    umbrella.position.set(-2.4, 0, -1.6);
-    umbrella.add(cyl(0.03, 0.03, 2.2, std(0xffffff), 0, 1.1, 0));
-    const canopy = new THREE.Mesh(new THREE.ConeGeometry(1.2, 0.5, 12), std(0xff5d73));
-    canopy.position.y = 2.3;
-    umbrella.add(canopy);
-    g.add(umbrella);
-    g.add(box(0.7, 0.45, 0.45, std(0x1d9bf0), 2.4, 0.225, -2.2), box(0.72, 0.08, 0.47, std(0xffffff), 2.4, 0.47, -2.2));
-    colliders.push({ pos: [2.4, 0.25, -2.2], half: [0.35, 0.25, 0.23] });
     const towel = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 1.8), std(0xffffff, { map: tex.stripes('#ff6b6b', '#ffffff', [3, 1]) }));
     towel.rotation.x = -Math.PI / 2;
     towel.position.set(-2.2, 0.005, -0.4);
     g.add(towel);
     g.add(lightRig({ sky: 0xbfe6ff, ground: 0xe9cf8f, hemi: 1.3, key: 0xfff4d6, keyIntensity: 2.8, keyPos: [4, 9, 3] }));
-    return { group: g, colliders, background: new THREE.Color(0x8fd3ff), fog: new THREE.Fog(0xbfe6ff, 16, 40) };
+    const propsList = [
+      place(props.umbrella(), -2.4, 1.15, -1.6),
+      place(props.cooler(), 2.4, 0.25, -2.2),
+      place(props.beachBall(), 1.2, 0.3, 1.2),
+      place(props.deckChair(), -3.2, 0.25, 0.4, 0.4),
+      place(props.deckChair(), 3.4, 0.25, 0.6, -0.5),
+      place(props.bucket(), 0.8, 0.15, -2.3),
+    ];
+    return { group: g, colliders, props: propsList, background: new THREE.Color(0x8fd3ff), fog: new THREE.Fog(0xbfe6ff, 16, 40) };
   },
 };
 
@@ -161,28 +158,24 @@ export const space: ThemeDef = {
     const frame = std(0x2a2f38, { metalness: 0.6, roughness: 0.4 });
     for (const x of [-3.3, 0, 3.3]) g.add(box(0.15, 6, 0.15, frame, x, 3, ROOM.back + 0.08));
     g.add(box(10, 0.2, 0.2, frame, 0, 0.6, ROOM.back + 0.1), box(10, 0.2, 0.2, frame, 0, 5.4, ROOM.back + 0.1));
-    // Consoles with blinking lights.
-    const blinkers: THREE.Mesh[] = [];
-    for (const x of [-4, 4]) {
-      g.add(box(1.2, 1, 0.6, std(0x39424f, { metalness: 0.5 }), x, 0.5, -2.4));
-      colliders.push({ pos: [x, 0.5, -2.4], half: [0.6, 0.5, 0.3] });
-      for (let i = 0; i < 6; i++) {
-        const l = new THREE.Mesh(new THREE.CircleGeometry(0.04, 10), basic({ color: [0xff3b30, 0x34c759, 0x4cc9f0][i % 3] }));
-        l.position.set(x - 0.4 + (i % 3) * 0.4, 0.8 + Math.floor(i / 3) * 0.15, -2.09);
-        blinkers.push(l);
-        g.add(l);
-      }
-    }
     const floatSign = new THREE.Mesh(new THREE.PlaneGeometry(2, 0.5), basic({ map: tex.sign('LOW GRAVITY', '#101826', '#7ff6ff') }));
     floatSign.position.set(0, 5.2, -2.9);
     g.add(floatSign);
     g.add(lightRig({ sky: 0xa9c4ff, ground: 0x22262e, hemi: 0.9, key: 0xdfe8ff, keyIntensity: 2.2, keyPos: [2, 8, 4] }));
+    const propsList = [
+      place(props.console(), -4, 0.5, -2.4),
+      place(props.console(), 4, 0.5, -2.4),
+      place(props.crate(0.7), -2.6, 0.35, -2.5, 0.3),
+      place(props.crate(0.5), 2.6, 0.25, 1.8),
+      place(props.chair(0x566170), 1.5, 0.46, -2.2, -0.3),
+      place(props.spaceWindow(), 0, 3, ROOM.back + 0.16),
+    ];
     return {
       group: g,
       colliders,
+      props: propsList,
       background: new THREE.Color(0x05060f),
       update(_dt, t) {
-        blinkers.forEach((b, i) => (b.visible = Math.sin(t * (2 + i * 0.7) + i) > -0.2));
         view.position.x = Math.sin(t * 0.05) * 0.3;
       },
     };

@@ -114,6 +114,16 @@ export class Melee implements WeaponBehavior {
     // Re-check what's under the swing now: the boss may have moved since the click.
     const ray = new THREE.Ray(this.ctx.rig.camera.position.clone(), s.dir.clone());
     const hit = this.ctx.raycastBoss(ray) ?? s.aim.hit;
+    const prop = this.ctx.raycastProp(ray);
+    const bossDist = hit ? hit.point.distanceTo(ray.origin) : Infinity;
+    if (prop && prop.distance < bossDist && prop.point.distanceTo(s.end) < 0.9) {
+      // Smacking furniture.
+      const amount = this.def.damage * (0.85 + Math.random() * 0.3);
+      this.ctx.props.hit(prop.prop, amount, prop.point, s.dir, this.def.impulse);
+      this.ctx.fx.impactSparks(prop.point, s.dir, 6, 0xffe29a);
+      this.ctx.rig.shake(0.1);
+      return;
+    }
     if (!hit || hit.point.distanceTo(s.end) > 0.9) {
       return;
     }

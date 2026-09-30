@@ -1,6 +1,8 @@
 import * as THREE from 'three';
-import { box, buildRoom, cyl, lightRig, std, type StaticBox, type ThemeDef } from './Theme';
+import { box, buildRoom, lightRig, std, type StaticBox, type ThemeDef } from './Theme';
 import { tex } from './textures';
+import { place, props } from '../props/propLib';
+import type { PropSpec } from '../props/PropSystem';
 
 export const office: ThemeDef = {
   id: 'office',
@@ -46,48 +48,21 @@ export const office: ThemeDef = {
     hands.add(hourPivot, minPivot);
     g.add(hands);
 
-    // Desk with monitor (left back).
-    const wood = std(0x8a5a36, { map: tex.planks('#8a5a36', [1, 1]) });
-    const desk = new THREE.Group();
-    desk.position.set(-3.3, 0, -2.2);
-    desk.add(box(2, 0.08, 0.9, wood, 0, 0.78, 0));
-    for (const [x, z] of [
-      [-0.9, -0.38],
-      [0.9, -0.38],
-      [-0.9, 0.38],
-      [0.9, 0.38],
-    ])
-      desk.add(box(0.07, 0.76, 0.07, std(0x3a3a3a), x, 0.38, z));
-    desk.add(box(0.6, 0.38, 0.04, std(0x111111), 0.2, 1.1, -0.2), box(0.08, 0.2, 0.08, std(0x222222), 0.2, 0.9, -0.2));
-    desk.add(box(0.42, 0.02, 0.15, std(0x333333), 0.1, 0.83, 0.15));
-    const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.33), new THREE.MeshBasicMaterial({ color: 0x3b7dd8 }));
-    screen.position.set(0.2, 1.1, -0.177);
-    desk.add(screen);
-    desk.add(cyl(0.05, 0.04, 0.12, std(0xffffff), -0.6, 0.88, 0.1));
-    g.add(desk);
-    colliders.push({ pos: [-3.3, 0.41, -2.2], half: [1, 0.41, 0.45] });
-
-    // Filing cabinet and plant (right back).
-    const metal = std(0x8e9aa6, { metalness: 0.4, roughness: 0.5 });
-    const cab = box(0.6, 1.3, 0.6, metal, 3.9, 0.65, -2.5);
-    g.add(cab);
-    for (let i = 0; i < 3; i++) g.add(box(0.25, 0.04, 0.03, std(0x444444), 3.9, 0.3 + i * 0.4, -2.19, false));
-    colliders.push({ pos: [3.9, 0.65, -2.5], half: [0.3, 0.65, 0.3] });
-    g.add(cyl(0.25, 0.2, 0.45, std(0xb5562b), 4.4, 0.225, -1.4));
-    const leaf = std(0x2f8f3a);
-    for (let i = 0; i < 9; i++) {
-      const l = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), leaf);
-      l.position.set(4.4 + Math.cos(i) * 0.18, 0.7 + (i % 3) * 0.22, -1.4 + Math.sin(i * 2) * 0.18);
-      l.scale.set(0.8, 1.3, 0.8);
-      l.castShadow = true;
-      g.add(l);
-    }
-    colliders.push({ pos: [4.4, 0.4, -1.4], half: [0.3, 0.4, 0.3] });
-
-    // Water cooler (left wall).
-    g.add(box(0.4, 1, 0.4, std(0xeeeeee), -4.6, 0.5, 0.6));
-    g.add(cyl(0.17, 0.17, 0.45, std(0x7ec8f0, { transparent: true, opacity: 0.6, roughness: 0.1 }), -4.6, 1.25, 0.6));
-    colliders.push({ pos: [-4.6, 0.7, 0.6], half: [0.2, 0.7, 0.2] });
+    // Furniture: all of it can be grabbed, thrown and broken.
+    const propsList: PropSpec[] = [
+      place(props.desk(), -3.3, 0.4, -2.2),
+      place(props.monitor(), -3.1, 1.03, -2.35),
+      place(props.mug(0xffffff), -3.9, 0.87, -2.1),
+      place(props.mug(0xd62828), -2.6, 0.87, -2.0),
+      place(props.officeChair(), -3.2, 0.46, -1.4, 0.3),
+      place(props.filingCabinet(), 3.9, 0.65, -2.5),
+      place(props.plantPot(), 4.4, 0.45, -1.4),
+      place(props.waterCooler(), -4.6, 0.72, 0.6),
+      place(props.officeChair(), 2.6, 0.46, -1.9, -0.4),
+      // Window panes in front of the skyline.
+      place(props.windowPane(1.36, 1.9), -3.13, 2.6, -2.9),
+      place(props.windowPane(1.36, 1.9), -1.67, 2.6, -2.9),
+    ];
 
     // Ceiling light panels.
     const panel = new THREE.MeshBasicMaterial({ color: 0xfffdf0 });
@@ -103,6 +78,7 @@ export const office: ThemeDef = {
     return {
       group: g,
       colliders,
+      props: propsList,
       background: new THREE.Color(0xd9d0bd),
       update(_dt, time) {
         minPivot.rotation.z = -time * 0.5;

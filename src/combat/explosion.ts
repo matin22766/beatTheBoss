@@ -9,6 +9,7 @@ export function explode(ctx: WeaponCtx, center: THREE.Vector3, radius: number, d
   audio.play('explosion', { intensity: 1.2 });
   ctx.rig.shake(Math.min(1, 0.5 + damage / 150));
   ctx.hitstop(0.06);
+  ctx.props.explode(center, radius, damage);
   const boss = ctx.boss();
   if (!boss) return;
   for (const part of boss.ragdoll.parts.values()) {

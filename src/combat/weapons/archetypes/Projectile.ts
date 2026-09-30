@@ -102,6 +102,12 @@ export class Projectile implements WeaponBehavior {
       const ray = new THREE.Ray(prev, seg.clone().multiplyScalar(1 / len));
       const hit = this.ctx.raycastBoss(ray, len);
       const dir = ray.direction.clone();
+      const prop = this.ctx.raycastProp(ray, len);
+      if (prop && (!hit || prop.distance < hit.point.distanceTo(ray.origin))) {
+        this.ctx.props.hit(prop.prop, this.def.damage, prop.point, dir, this.def.impulse);
+        this.onHitWall(s, prop.point, dir);
+        continue;
+      }
       if (hit) {
         this.onHitBoss(s, hit.part, hit.point, dir);
         continue;

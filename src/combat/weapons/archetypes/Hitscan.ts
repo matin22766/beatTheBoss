@@ -41,6 +41,14 @@ export class Hitscan implements WeaponBehavior {
         .normalize();
       const ray = new THREE.Ray(aim.ray.origin.clone(), dir);
       const hit = this.ctx.raycastBoss(ray);
+      const prop = this.ctx.raycastProp(ray);
+      if (prop && (!hit || prop.distance < hit.point.distanceTo(ray.origin))) {
+        // Furniture in the way soaks the bullet.
+        this.ctx.fx.tracer(muzzle, prop.point);
+        this.ctx.props.hit(prop.prop, this.def.damage, prop.point, dir, this.def.impulse);
+        this.ctx.fx.impactSparks(prop.point, dir, 5);
+        continue;
+      }
       const end = hit ? hit.point : roomPoint(ray);
       this.ctx.fx.tracer(muzzle, end);
       if (hit) {

@@ -35,7 +35,10 @@ export type SoundName =
   | 'kaching'
   | 'slowIn'
   | 'slowOut'
-  | 'step';
+  | 'step'
+  | 'metalHit'
+  | 'woodBreak'
+  | 'splash';
 
 interface AmbiencePreset {
   noise?: { type: BiquadFilterType; freq: number; q: number; level: number; lfoRate?: number; lfoDepth?: number };
@@ -413,6 +416,24 @@ export class AudioEngine {
       case 'kaching':
         this.noise(out, t, 0.08, 'highpass', 5000, 4000, 0.7, 0.8, 0.001);
         [2093, 2637, 3136].forEach((f, i) => this.tone(out, t + 0.05 + i * 0.05, 0.6, 'triangle', f, f, 0.18, 0.002));
+        break;
+      case 'metalHit':
+        for (const [r, lvl] of [
+          [1, 0.5],
+          [2.4, 0.25],
+          [4.1, 0.12],
+        ] as const)
+          this.tone(out, t, 0.35, 'sine', 180 * p * r, 170 * p * r, lvl, 0.001);
+        this.noise(out, t, 0.05, 'bandpass', 2500 * p, 1200, 1.2, 0.6, 0.001);
+        break;
+      case 'woodBreak': {
+        this.tone(out, t, 0.12, 'triangle', 160 * p, 60, 0.9);
+        for (let i = 0; i < 10; i++) this.noise(out, t + Math.random() * 0.25, 0.03 + Math.random() * 0.05, 'bandpass', rand(400, 1600) * p, rand(300, 900), 2, rand(0.5, 1), 0.001);
+        break;
+      }
+      case 'splash':
+        this.noise(out, t, 0.5, 'bandpass', 1600 * p, 400, 1.2, 1, 0.01);
+        for (let i = 0; i < 5; i++) this.tone(out, t + 0.05 + Math.random() * 0.3, 0.08, 'sine', rand(600, 1400), rand(1500, 2500), 0.15, 0.002);
         break;
       case 'slowIn':
         this.tone(out, t, 0.6, 'sine', 420, 60, 0.9, 0.01);

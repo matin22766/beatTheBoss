@@ -137,6 +137,11 @@ export class Thrown implements WeaponBehavior {
       const dir = new THREE.Vector3(c.dirX, c.dirY, c.dirZ);
       const speed = Math.abs(it.preVel.dot(dir));
       const part = this.ctx.partForCollider(other);
+      const prop = this.ctx.props.byCollider(other);
+      if (prop && speed > 3 && this.time - it.lastBounce > 0.15) {
+        const t = it.body.translation();
+        this.ctx.props.damage(prop, (speed - 2) * Math.sqrt(this.def.opts?.mass ?? 1) * 3, new THREE.Vector3(t.x, t.y, t.z), it.preVel.clone().normalize());
+      }
       if (part) this.hitBoss(it, part, speed, other);
       else if (speed > 2 && this.time - it.lastBounce > 0.15) {
         it.lastBounce = this.time;

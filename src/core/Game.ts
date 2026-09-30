@@ -29,6 +29,7 @@ import type { GoreMode } from '../fx/Effects';
 import type { FaceProfile } from '../face/FaceProfile';
 import { saveProfile } from '../face/FaceProfile';
 import { roomPoint } from './roomPoint';
+import { PropSystem, type Prop, type PropHit, type BreakEffect } from '../props/PropSystem';
 
 const IMPACT_MIN_SPEED = 4;
 export const BULLET_TIME_SCALE = 0.25;
@@ -53,6 +54,9 @@ export class Game {
   outlineEnabled = true;
   readonly hud: Hud;
   readonly grab: GrabController;
+  readonly props: PropSystem;
+  private depressurizeT = 0;
+  private depressurizePoint = new THREE.Vector3();
   readonly weapons: WeaponSystem;
   readonly viewModel: ViewModel;
   readonly weaponBar: WeaponBar;
@@ -96,6 +100,7 @@ export class Game {
     lastX: 0,
     lastY: 0,
     pending: null as BossHit | null,
+    pendingProp: null as PropHit | null,
     inside: false,
   };
 
@@ -130,6 +135,12 @@ export class Game {
     }
     this.scene.add(this.rig.camera);
     this.scene.add(this.fx.group);
+    this.props = new PropSystem(this.physics, this.scene, this.sync, this.fx, {
+      hitBoss: (info) => this.hitBoss(info),
+      partForCollider: (h) => this.boss?.ragdoll.byCollider.get(h)?.def.name ?? null,
+      shake: (a) => this.rig.shake(a),
+      onSpecial: (effect, prop) => this.onPropSpecial(effect, prop),
+    });
     this.quality = new QualityManager(this, st.quality, st.autoQuality, (q) => {
       this.save.data.settings.quality = q;
       this.save.save();
@@ -150,6 +161,8 @@ export class Game {
       raycastBoss: (ray, maxDist) => this.raycastBoss(ray, maxDist),
       partForCollider: (h) => this.boss?.ragdoll.byCollider.get(h)?.def.name ?? null,
       hitstop: (s) => this.hitstop(s),
+      props: this.props,
+      raycastProp: (ray, maxDist) => this.props.raycast(ray, maxDist),
       viewModel: (this.viewModel = new ViewModel(this.rig.camera)),
       now: () => this.time,
     };
@@ -201,6 +214,8 @@ export class Game {
     }
     this.themeDef = def;
     const inst = (this.theme = def.build());
+    this.props.load(inst.props ?? []);
+    this.depressurizeT = 0;
     this.scene.add(inst.group);
     this.scene.background = inst.background;
     this.scene.fog = inst.fog ?? null;
@@ -406,6 +421,8 @@ export class Game {
     this.boss?.update(scaledDt, this.time);
     this.weapons.update(scaledDt);
     this.fx.update(scaledDt);
+    this.props.update(scaledDt);
+    this.updateDepressurize(scaledDt);
     this.theme?.update?.(scaledDt, this.time);
     this.economy.tick(this.time);
     this.hud.setCombo(this.economy.combo, this.economy.multiplier);
@@ -439,6 +456,7 @@ export class Game {
     this.physics.step(dt);
     this.sync.capture();
     this.processImpacts(dt);
+    this.props.afterStep(this.physics.contacts);
     this.weapons.afterStep();
   }
 
@@ -450,7 +468,7 @@ export class Game {
     const boss = this.boss;
     if (!boss) return;
     this.impactCooldown -= dt;
-    let best: { part: PartRuntime; speed: number; surface: Surface | 'prop'; v: THREE.Vector3 } | null = null;
+    let best: { part: PartRuntime; speed: number; surface: Surface | 'prop'; v: THREE.Vector3; otherHandle?: number } | null = null;
     for (const c of this.physics.contacts) {
       let partRt = boss.ragdoll.byCollider.get(c.h1);
       let other = c.h2;
@@ -459,12 +477,12 @@ export class Game {
         other = c.h1;
       }
       if (!partRt) continue;
-      const surface = this.surfaces.get(other);
+      const surface = this.surfaces.get(other) ?? (this.props.isProp(other) ? 'prop' : undefined);
       if (!surface) continue;
       const v = this.preVel.get(partRt.collider.handle);
       if (!v) continue;
       const speed = Math.abs(v.x * c.dirX + v.y * c.dirY + v.z * c.dirZ);
-      if (!best || speed > best.speed) best = { part: partRt, speed, surface, v };
+      if (!best || speed > best.speed) best = { part: partRt, speed, surface, v, otherHandle: other };
     }
     if (!best || best.speed < IMPACT_MIN_SPEED || this.impactCooldown > 0) return;
     this.impactCooldown = 0.12;
@@ -478,6 +496,9 @@ export class Game {
     const massFactor = 0.7 + part.def.mass / 25;
     const amount = Math.min(45, (speed - IMPACT_MIN_SPEED) * 3.2 * massFactor);
     boss.hit({ part: name, amount, type: 'blunt', point, dir: into, impulse: 0, source: 'wall' });
+    // Whatever he slammed into takes damage too (windows, tables...).
+    const hitProp = best.otherHandle !== undefined ? this.props.byCollider(best.otherHandle) : undefined;
+    if (hitProp) this.props.damage(hitProp, amount * 1.2, point, into);
 
     const k = Math.min(1, (speed - IMPACT_MIN_SPEED) / 9);
     audio.play('thud', { intensity: 0.4 + k * 0.8 });
@@ -512,7 +533,53 @@ export class Game {
   aim(): Aim {
     const ray = this.ray();
     const hit = this.raycastBoss(ray);
-    return { ray, hit, point: hit?.point ?? roomPoint(ray) };
+    const prop = this.props.raycast(ray);
+    const bossDist = hit ? hit.point.distanceTo(ray.origin) : Infinity;
+    // A prop in front of the boss takes the hit; a prop behind him is ignored.
+    const frontProp = prop && prop.distance < bossDist ? prop : null;
+    return { ray, hit: frontProp ? null : hit, prop: frontProp, point: frontProp?.point ?? hit?.point ?? roomPoint(ray) };
+  }
+
+  // ---------------------------------------------------------------- props
+
+  private onPropSpecial(effect: BreakEffect, prop: Prop): void {
+    if (effect === 'depressurize') {
+      // Hull breach: everything gets sucked toward the hole until the emergency shield closes.
+      const t = prop.body.translation();
+      this.depressurizePoint.set(t.x, t.y, t.z);
+      this.depressurizeT = 3;
+      this.hud.banner('HULL BREACH!');
+      audio.play('explosion', { intensity: 0.8, pitch: 0.6 });
+      const spec = prop.spec;
+      setTimeout(() => {
+        if (this.themeDef.id !== 'space') return;
+        this.props.spawn({ ...spec, id: `${spec.id}r` });
+        this.hud.toast('Emergency shield restored');
+        audio.play('freeze', { intensity: 0.6 });
+      }, 3500);
+    } else if (effect === 'goo') {
+      this.hud.banner('BIOHAZARD!');
+    }
+  }
+
+  private updateDepressurize(dt: number): void {
+    if (this.depressurizeT <= 0) return;
+    this.depressurizeT -= dt;
+    const pull = (body: RAPIER.RigidBody, k: number) => {
+      const t = body.translation();
+      const d = new THREE.Vector3(this.depressurizePoint.x - t.x, this.depressurizePoint.y - t.y, this.depressurizePoint.z - t.z);
+      const len = Math.max(0.5, d.length());
+      d.multiplyScalar((k * body.mass() * dt) / len);
+      body.applyImpulse(d, true);
+    };
+    if (this.boss) for (const p of this.boss.ragdoll.parts.values()) pull(p.body, 14);
+    for (const p of this.props.props) if (!p.spec.fixed) pull(p.body, 10);
+    for (let i = 0; i < 4; i++) {
+      const from = new THREE.Vector3((Math.random() - 0.5) * 8, Math.random() * 5, 2 + Math.random() * 2);
+      const v = this.depressurizePoint.clone().sub(from).normalize().multiplyScalar(12);
+      this.fx.dust.spawn({ pos: from, vel: v, life: 0.6, size: 0.03, sizeEnd: 0.01, color: 0xcfe7ff, gravity: 0, drag: 0 });
+    }
+    this.rig.shake(0.05);
   }
 
   private bindInput(): void {
@@ -528,6 +595,7 @@ export class Game {
       const grabButton = e.button === 2;
       if (grabButton) {
         if (aim.hit && this.startGrab(aim.hit)) return;
+        if (aim.prop && this.startGrabProp(aim.prop)) return;
         this.pointer.mode = 'orbit';
         return;
       }
@@ -536,14 +604,15 @@ export class Game {
         return;
       }
       if (e.button !== 0) return;
-      if (!aim.hit && this.weapons.current.archetype === 'melee' && !e.ctrlKey) {
+      if (!aim.hit && !aim.prop && this.weapons.current.archetype === 'melee' && !e.ctrlKey) {
         this.pointer.mode = 'orbit';
         return;
       }
-      if (this.weapons.current.id === 'fists' && aim.hit) {
-        // Fists: tap to punch, drag to grab.
+      if (this.weapons.current.id === 'fists' && (aim.hit || aim.prop)) {
+        // Fists: tap to punch, drag to grab (the boss or any object).
         this.pointer.mode = 'pending-grab';
         this.pointer.pending = aim.hit;
+        this.pointer.pendingProp = aim.prop ?? null;
         return;
       }
       this.pointer.mode = 'weapon';
@@ -562,6 +631,7 @@ export class Game {
         case 'pending-grab': {
           const moved = Math.hypot(this.pointer.x - this.pointer.startX, this.pointer.y - this.pointer.startY);
           if (moved > 8 && this.pointer.pending) this.startGrab(this.pointer.pending);
+          else if (moved > 8 && this.pointer.pendingProp) this.startGrabProp(this.pointer.pendingProp);
           break;
         }
         case 'grab':
@@ -569,16 +639,17 @@ export class Game {
           break;
         case 'none': {
           // Hover feedback.
-          const overBoss = !!this.raycastBoss(this.ray());
-          c.classList.toggle('can-grab', overBoss && this.weapons.current.id === 'fists');
+          const a = this.currentAim();
+          c.classList.toggle('can-grab', !!(a.hit || a.prop) && this.weapons.current.id === 'fists');
           break;
         }
       }
     });
     const end = (e: PointerEvent) => {
       this.updatePointer(e);
-      if (this.pointer.mode === 'pending-grab' && this.pointer.pending) {
-        this.weapons.down({ ray: this.ray(), hit: this.pointer.pending, point: this.pointer.pending.point });
+      if (this.pointer.mode === 'pending-grab' && (this.pointer.pending || this.pointer.pendingProp)) {
+        const pp = this.pointer.pendingProp;
+        this.weapons.down({ ray: this.ray(), hit: this.pointer.pending, prop: pp, point: this.pointer.pending?.point ?? pp!.point });
         this.weapons.up();
       }
       if (this.pointer.mode === 'grab') {
@@ -589,6 +660,7 @@ export class Game {
       if (this.pointer.mode === 'weapon') this.weapons.up();
       this.pointer.mode = 'none';
       this.pointer.pending = null;
+      this.pointer.pendingProp = null;
       c.classList.remove('grabbing');
     };
     c.addEventListener('pointerup', end);
@@ -623,6 +695,14 @@ export class Game {
       if (e.key === 'q' || e.key === 'Q') this.cycleWeapon(-1);
       if (e.key === 'e' || e.key === 'E') this.cycleWeapon(1);
     });
+  }
+
+  private startGrabProp(hit: PropHit): boolean {
+    if (!this.grab.startBody(hit.prop.body, hit.prop.spec.mass, hit.point, this.rig.camera)) return false;
+    this.pointer.mode = 'grab';
+    this.canvas.classList.add('grabbing');
+    audio.play('thunk', { intensity: 0.3, pitch: 1.4 });
+    return true;
   }
 
   private startGrab(hit: BossHit): boolean {

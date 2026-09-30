@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { ROOM } from '../physics/ArenaColliders';
+import type { PropSpec } from '../props/PropSystem';
 
 export interface StaticBox {
   pos: [number, number, number];
@@ -9,8 +10,10 @@ export interface StaticBox {
 
 export interface ThemeInstance {
   group: THREE.Group;
-  /** Static colliders for big props so the boss can be smashed into them. */
+  /** Static colliders for fixtures that never move. */
   colliders: StaticBox[];
+  /** Movable / breakable objects. */
+  props?: PropSpec[];
   background: THREE.Color;
   fog?: THREE.Fog;
   update?(dt: number, time: number): void;

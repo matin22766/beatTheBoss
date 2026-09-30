@@ -58,7 +58,19 @@ export class Saw implements WeaponBehavior {
     const chain = this.pivot.getObjectByName('chain');
     if (chain) chain.position.x = Math.sin(this.t * 90) * 0.002;
 
-    if (!hit) return;
+    if (!hit) {
+      // Sawing through furniture.
+      const prop = this.ctx.raycastProp(this.aim.ray, 8);
+      if (prop) {
+        this.ctx.fx.impactSparks(prop.point, dir, 3, 0xffe29a);
+        this.tick -= dt;
+        if (this.tick <= 0) {
+          this.tick = TICK;
+          this.ctx.props.hit(prop.prop, this.def.damage * 1.5, prop.point, dir, 1);
+        }
+      }
+      return;
+    }
     // Grinding FX every frame.
     this.ctx.fx.impactSparks(hit.point, dir, 2, 0xffe29a);
     if (this.ctx.fx.gore !== 'off' && Math.random() < 0.7) this.ctx.fx.bleed(hit.point, dir, 6);

@@ -8,6 +8,7 @@ import type { PhysicsWorld } from '../../physics/PhysicsWorld';
 import type { BodySync } from '../../core/BodySync';
 import type { CameraRig } from '../../core/CameraRig';
 import type { ViewModel } from './ViewModel';
+import type { PropHit, PropSystem } from '../../props/PropSystem';
 
 export type WeaponCategory = 'blunt' | 'sharp' | 'gun' | 'explosive' | 'elemental' | 'drop';
 export type Archetype = 'melee' | 'thrown' | 'hitscan' | 'projectile' | 'spray' | 'saw';
@@ -77,6 +78,8 @@ export interface Aim {
   hit: BossHit | null;
   /** First world point under the cursor (boss or room). */
   point: THREE.Vector3;
+  /** Arena object under the cursor, if it is closer than the boss. */
+  prop?: PropHit | null;
 }
 
 export interface WeaponCtx {
@@ -94,6 +97,9 @@ export interface WeaponCtx {
   partForCollider(handle: number): PartName | null;
   hitstop(seconds: number): void;
   viewModel: ViewModel;
+  props: PropSystem;
+  /** Nearest of boss/prop along a ray (props block shots aimed through them). */
+  raycastProp(ray: THREE.Ray, maxDist?: number): PropHit | null;
   /** Current world time (seconds, slow-mo scaled). */
   now(): number;
 }

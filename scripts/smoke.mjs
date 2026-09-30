@@ -5,7 +5,7 @@ import { mkdirSync, existsSync } from 'node:fs';
 
 const url = process.argv[2] ?? 'http://localhost:5173/?debug';
 // SMOKE=basic,weapons,deaths (default: all). The software renderer is slow, so run sections separately.
-const sections = new Set((process.env.SMOKE ?? 'basic,bullettime,camera,weapons,deaths,face,shop,themes').split(','));
+const sections = new Set((process.env.SMOKE ?? 'basic,bullettime,camera,props,weapons,deaths,face,shop,themes').split(','));
 const out = 'smoke-out';
 mkdirSync(out, { recursive: true });
 const exe = ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome', '/opt/pw-browsers/chromium'].find((p) => existsSync(p));
@@ -110,6 +110,54 @@ if (sections.has('camera')) {
     if (Math.abs(c[0]) > 4.8 || c[1] < 0.1 || c[1] > 5.9 || c[2] > 7.7 || c[2] < -2.9) errors.push('camera left the room: ' + c.join(','));
   }
   await shot('camera-orbit');
+}
+
+// ---- Props: throw furniture at him, shatter the window, break things apart ----
+if (sections.has('props')) {
+  await page.evaluate(() => window.__game.setTheme(window.__themes[0]));
+  await waitGame(1.5);
+  const before = await page.evaluate(() => {
+    const g = window.__game;
+    const desk = g.props.props.find((p) => p.spec.hp === 140);
+    const chest = g.boss.ragdoll.position('chest');
+    const t = desk.body.translation();
+    const d = { x: chest.x - t.x, y: chest.y - t.y + 0.3, z: chest.z - t.z };
+    const len = Math.hypot(d.x, d.y, d.z);
+    desk.body.setLinvel({ x: (d.x / len) * 11, y: (d.y / len) * 11 + 2, z: (d.z / len) * 11 }, true);
+    return { hp: g.boss.damage.hp, deskHp: desk.hp, n: g.props.props.length };
+  });
+  await waitGame(1.2);
+  await shot('p-desk-throw');
+  const after = await page.evaluate(() => {
+    const g = window.__game;
+    const desk = g.props.props.find((p) => p.spec.hp === 140);
+    return { hp: g.boss.damage.hp, deskHp: desk ? desk.hp : -1 };
+  });
+  if (!(after.hp < before.hp)) errors.push('thrown desk did not hurt the boss: ' + JSON.stringify({ before, after }));
+  // Shatter the window panes with the pistol.
+  await page.evaluate(() => {
+    const g = window.__game;
+    for (const p of g.props.props.filter((p) => p.spec.material === 'glass' && p.spec.fixed)) {
+      const t = p.body.translation();
+      g.props.hit(p, 100, new window.__THREE.Vector3(t.x, t.y, t.z), new window.__THREE.Vector3(0, 0, -1), 0);
+    }
+  });
+  await waitGame(0.3);
+  await shot('p-window');
+  const panes = await page.evaluate(() => window.__game.props.props.filter((p) => p.spec.material === 'glass' && p.spec.fixed).length);
+  if (panes !== 0) errors.push('window panes survived: ' + panes);
+  // Slam a chair into the wall until it breaks.
+  const broke = await page.evaluate(async () => {
+    const g = window.__game;
+    const chair = g.props.props.find((p) => p.spec.seat === 0.04);
+    for (let i = 0; i < 8 && !chair.broken; i++) {
+      chair.body.setLinvel({ x: -14, y: 2, z: 0 }, true);
+      await new Promise((r) => setTimeout(r, 900));
+    }
+    return chair.broken;
+  });
+  await shot('p-chair');
+  if (!broke) errors.push('chair never broke');
 }
 
 // ---- Every weapon: select, aim at the chest, fire/hold, check it did something ----
