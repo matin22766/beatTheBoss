@@ -33,6 +33,8 @@ export interface FaceRig {
   target: Expression;
   update(dt: number, time: number): void;
   dispose(): void;
+  /** Materials that should follow burn/freeze tinting. */
+  materials?: THREE.Material[];
 }
 
 export function blendExpression(cur: Expression, target: Expression, k: number): void {

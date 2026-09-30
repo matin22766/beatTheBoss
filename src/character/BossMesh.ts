@@ -177,10 +177,26 @@ export class BossMesh {
     face.group.traverse((o) => {
       if (o instanceof THREE.Mesh) o.userData.part = 'head';
     });
+    this.setHairColor(hideDefaultHair ? null : undefined);
+    for (const m of face.materials ?? []) if (m instanceof THREE.MeshToonMaterial) this.baseColors.set(m, m.color.clone());
+  }
+
+  /** Skin tone for head, neck, ears and hands. */
+  setSkinColor(color: THREE.ColorRepresentation): void {
+    this.materials.skin.color.set(color);
+    this.baseColors.set(this.materials.skin, this.materials.skin.color.clone());
+  }
+
+  /** Hair colour; null = bald, undefined = leave colour but show hair. */
+  setHairColor(color: THREE.ColorRepresentation | null | undefined): void {
     const head = this.parts.get('head')!;
     head.children.forEach((c) => {
-      if (c instanceof THREE.Mesh && c.material === this.materials.hair) c.visible = !hideDefaultHair;
+      if (c instanceof THREE.Mesh && c.material === this.materials.hair) c.visible = color !== null;
     });
+    if (color) {
+      this.materials.hair.color.set(color);
+      this.baseColors.set(this.materials.hair, this.materials.hair.color.clone());
+    }
   }
 
   addTo(scene: THREE.Object3D): void {

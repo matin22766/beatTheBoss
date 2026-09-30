@@ -665,3 +665,151 @@ input[type='range'] {
     opacity: 0;
   }
 }
+
+/* ---------- Face modal & morph loader ---------- */
+.face-modal {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 36px 20px;
+  border: 2px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 16px;
+  background: #20222d;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.dropzone:hover,
+.dropzone.over {
+  border-color: var(--accent);
+  background: #272a37;
+}
+
+.dz-ico {
+  font-size: 44px;
+}
+
+.dz-title {
+  font-weight: 800;
+  font-size: 18px;
+}
+
+.dz-sub {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.face-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.face-error {
+  background: rgba(255, 59, 48, 0.12);
+  border: 1px solid rgba(255, 59, 48, 0.5);
+  color: #ffb3ad;
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-weight: 700;
+}
+
+video.cam {
+  width: 100%;
+  border-radius: 14px;
+  transform: scaleX(-1);
+  background: #000;
+}
+
+.fl-stage {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.fl-stage canvas {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 14px;
+  background: #0d0e14;
+  display: block;
+}
+
+.fl-3d {
+  background: radial-gradient(circle at 50% 40%, #2b3350, #0d0e14 70%) !important;
+}
+
+.fl-steps {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #5d5f6e;
+}
+
+.fl-steps li::before {
+  content: '○ ';
+}
+
+.fl-steps li.active {
+  color: var(--text);
+}
+
+.fl-steps li.active::before {
+  content: '◌ ';
+  color: #5eeaff;
+}
+
+.fl-steps li.done {
+  color: #7fe0a0;
+}
+
+.fl-steps li.done::before {
+  content: '✓ ';
+}
+
+.face-modal .progress {
+  width: 100%;
+  margin: 12px 0 0;
+}
+
+.face-after .hair-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  font-weight: 800;
+}
+
+.swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
+.swatch.on {
+  border-color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .fl-stage {
+    grid-template-columns: 1fr;
+  }
+  .fl-steps {
+    grid-template-columns: 1fr 1fr;
+  }
+}

@@ -22,7 +22,8 @@ import { Hud } from '../ui/Hud';
 import { audio } from '../audio/AudioEngine';
 import type { ThemeDef, ThemeInstance } from '../themes/Theme';
 import { office } from '../themes/office';
-import type { FaceRig } from '../character/Expression';
+import type { FaceProfile } from '../face/FaceProfile';
+import { saveProfile } from '../face/FaceProfile';
 import { roomPoint } from './roomPoint';
 
 const IMPACT_MIN_SPEED = 4;
@@ -50,7 +51,7 @@ export class Game {
   onLockedWeapon: (def: WeaponDef) => void = () => {};
   boss: Boss | null = null;
   themeDef: ThemeDef = office;
-  faceFactory: (() => FaceRig) | null = null;
+  faceProfile: FaceProfile | null = null;
 
   private outline: OutlineEffect;
   private theme: ThemeInstance | null = null;
@@ -195,7 +196,7 @@ export class Game {
     if (this.boss) this.boss.dispose();
     this.fx.clearSpurts();
     this.deaths.reset();
-    this.boss = new Boss(this.physics, this.scene, this.sync, this.events, this.fx, new THREE.Vector3(0, 0.02, 0), this.faceFactory ?? undefined);
+    this.boss = new Boss(this.physics, this.scene, this.sync, this.events, this.fx, new THREE.Vector3(0, 0.02, 0), this.faceProfile);
     this.impactCooldown = 0;
     this.respawnT = -1;
     this.hud.setHp(1, false);
@@ -525,6 +526,21 @@ export class Game {
     if (!list.length) return;
     const i = list.indexOf(this.weapons.current);
     this.selectWeapon(list[(i + dir + list.length) % list.length]);
+  }
+
+  /** Put a user's face on the boss (null = default cartoon face) and spawn a fresh boss. */
+  applyFace(profile: FaceProfile | null, persist = true): void {
+    this.faceProfile = profile;
+    if (persist) saveProfile(profile);
+    this.spawnBoss();
+    if (profile) {
+      this.hud.banner('NEW BOSS!');
+      this.boss?.ragdoll.setPose('taunt', 0.3, 2.2);
+    }
+  }
+
+  hasFace(): boolean {
+    return !!this.faceProfile;
   }
 
   /** Debug/test hook: kill the boss with a specific death style. */

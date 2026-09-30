@@ -5,7 +5,7 @@ import { mkdirSync, existsSync } from 'node:fs';
 
 const url = process.argv[2] ?? 'http://localhost:5173/?debug';
 // SMOKE=basic,weapons,deaths (default: all). The software renderer is slow, so run sections separately.
-const sections = new Set((process.env.SMOKE ?? 'basic,weapons,deaths').split(','));
+const sections = new Set((process.env.SMOKE ?? 'basic,weapons,deaths,face').split(','));
 const out = 'smoke-out';
 mkdirSync(out, { recursive: true });
 const exe = ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome', '/opt/pw-browsers/chromium'].find((p) => existsSync(p));
@@ -16,8 +16,10 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const errors = [];
+// MediaPipe logs routine INFO lines through console.error.
+const benign = [/XNNPACK/, /TensorFlow Lite/, /^INFO:/];
 page.on('console', (m) => {
-  if (m.type() === 'error') errors.push(m.text());
+  if (m.type() === 'error' && !benign.some((r) => r.test(m.text()))) errors.push(m.text());
   if (process.env.VERBOSE) console.log('[console]', m.type(), m.text());
 });
 page.on('pageerror', (e) => errors.push(String(e)));
@@ -119,6 +121,70 @@ for (const style of ['crumple', 'dismember', 'decapitate', 'shatter', 'charcoal'
   await waitGame(4.5);
   const respawned = await page.evaluate(() => !window.__game.boss.dead);
   if (!respawned) errors.push(`no respawn after ${style}`);
+}
+
+// ---- Face pipeline: a photo without a face must fail gracefully ----
+if (sections.has('face')) {
+  await page.evaluate(async () => {
+    const c = document.createElement('canvas');
+    c.width = 640;
+    c.height = 480;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#6a8caf';
+    ctx.fillRect(0, 0, 640, 480);
+    window.__faceModal.open();
+    await window.__faceModal.process(c);
+  });
+  const msg = await page.evaluate(() => document.querySelector('.face-error')?.textContent ?? '');
+  if (!/couldn't find a face/i.test(msg)) errors.push('no-face photo did not show a friendly error: ' + msg);
+  await page.evaluate(() => window.__faceModal.close());
+}
+
+// ---- Face pipeline (needs PORTRAIT=/path/to/front-facing-photo.jpg) ----
+if (sections.has('face') && process.env.PORTRAIT) {
+  const { readFileSync } = await import('node:fs');
+  const dataUrl = 'data:image/jpeg;base64,' + readFileSync(process.env.PORTRAIT).toString('base64');
+  await page.evaluate(async (src) => {
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth;
+    c.height = img.naturalHeight;
+    c.getContext('2d').drawImage(img, 0, 0);
+    window.__faceModal.open();
+    window.__faceDone = window.__faceModal.process(c);
+  }, dataUrl);
+  for (let i = 0; i < 12; i++) {
+    await wait(1500);
+    await shot(`f-loader-${String(i).padStart(2, '0')}`);
+    const done = await page.evaluate(() => !!document.querySelector('.face-after:not([hidden])') || !!document.querySelector('.face-error'));
+    if (done) break;
+  }
+  const err = await page.evaluate(() => document.querySelector('.face-error')?.textContent);
+  if (err) errors.push('face pipeline: ' + err);
+  else {
+    await wait(1500);
+    await shot('f-loader-done');
+    await page.click('.face-after .btn');
+    await waitGame(1.5);
+    await shot('f-game');
+    const ok = await page.evaluate(() => window.__game.hasFace());
+    if (!ok) errors.push('face was not applied');
+    for (const part of ['head', 'head', 'chest']) {
+      const { x, y } = await partXY(part);
+      await page.mouse.click(x, y);
+      await waitGame(0.25);
+    }
+    await shot('f-game-hit');
+    // The face survives a reload.
+    await page.reload();
+    await page.waitForSelector('.start .btn:not([disabled])', { timeout: 60000 });
+    await page.click('.start .btn');
+    await wait(4000);
+    const restored = await page.evaluate(() => window.__game.hasFace());
+    if (!restored) errors.push('face was not restored after reload');
+  }
 }
 
 const state = await page.evaluate(() => {

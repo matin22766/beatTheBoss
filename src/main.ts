@@ -2,6 +2,8 @@ import './ui/styles.css';
 import { Game } from './core/Game';
 import { audio } from './audio/AudioEngine';
 import { h } from './ui/dom';
+import { FaceModal } from './ui/FaceModal';
+import { loadProfile } from './face/FaceProfile';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const ui = document.getElementById('ui') as HTMLElement;
@@ -33,9 +35,25 @@ Game.create(canvas, ui)
       audio.play('boing', { intensity: 0.5 });
       overlay.remove();
     });
+    const faceModal = new FaceModal(ui, game);
+    game.hud.setSideActions([
+      { id: 'face', icon: '📷', label: 'Boss face', onClick: () => faceModal.open() },
+      { id: 'respawn', icon: '🔄', label: 'New boss (R)', onClick: () => game.spawnBoss() },
+      {
+        id: 'sound',
+        icon: '🔊',
+        label: 'Sound on/off',
+        onClick: () => {
+          audio.setMuted(!audio.muted);
+          document.querySelector('[data-id="sound"]')!.textContent = audio.muted ? '🔇' : '🔊';
+        },
+      },
+    ]);
+    // Restore a previously uploaded face.
+    void loadProfile().then((p) => p && game.applyFace(p, false));
     const params = new URLSearchParams(location.search);
     if (import.meta.env.DEV || params.has('debug')) {
-      (window as unknown as { __game: Game }).__game = game;
+      Object.assign(window, { __game: game, __faceModal: faceModal });
     }
   })
   .catch((err: unknown) => {

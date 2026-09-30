@@ -10,7 +10,8 @@ import type { DeathStyle, GameEvents, HitInfo, HitResult } from '../core/types';
 import type { Effects } from '../fx/Effects';
 import { audio } from '../audio/AudioEngine';
 import { pickDeathStyle } from '../death/pickDeathStyle';
-import type { FaceRig } from './Expression';
+import type { FaceProfile } from '../face/FaceProfile';
+import { PhotoFace } from '../face/PhotoFace';
 import { Injuries, injuryFor } from '../gore/Injuries';
 import { PART_NAMES } from './RagdollDef';
 
@@ -41,11 +42,15 @@ export class Boss {
     private readonly events: EventBus<GameEvents>,
     private readonly fx: Effects,
     origin = new THREE.Vector3(),
-    face?: () => FaceRig,
+    face?: FaceProfile | null,
   ) {
     this.ragdoll = new Ragdoll(physics, origin);
     this.mesh = new BossMesh();
-    if (face) this.mesh.setFace(face(), true);
+    if (face) {
+      this.mesh.setFace(new PhotoFace(face.data), false);
+      this.mesh.setSkinColor(face.skin);
+      this.mesh.setHairColor(face.hair);
+    }
     this.mesh.addTo(scene);
     for (const [name, part] of this.ragdoll.parts) this.sync.add(part.body, this.mesh.parts.get(name)!);
     this.damage = new DamageSystem(this.ragdoll);
